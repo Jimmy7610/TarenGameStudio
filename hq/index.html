@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Taren Game Studio HQ</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#e9eef5;background:#0b1018}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#172338,#0b1018 55%);min-height:100vh}
+header{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #26354a;background:#0d1420dd;position:sticky;top:0}
+h1{font-size:18px;margin:0;letter-spacing:.08em}button,input{font:inherit}button{background:#e9eef5;color:#0b1018;border:0;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer}
+main{display:grid;grid-template-columns:2fr 1fr;gap:14px;padding:14px}.panel{background:#101925;border:1px solid #26354a;border-radius:14px;padding:14px;box-shadow:0 18px 50px #0005}
+.office{min-height:500px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;align-content:start}.agent{border:1px solid #31445e;border-radius:12px;padding:15px;background:#142033;min-height:130px}.agent b{font-size:17px}.state{display:inline-block;margin-top:8px;padding:4px 8px;border-radius:999px;background:#26364b;font-size:12px}.MEETING{background:#564423}.WORKING{background:#214b3a}.WAITING{background:#3f3b5e}.BLOCKED{background:#642f36}.IDLE{background:#26364b}.task{margin-top:10px;color:#aab8ca;font-size:13px}
+.project{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}.metric{padding:10px;background:#0d1520;border:1px solid #26354a;border-radius:10px}.metric small{display:block;color:#8191a6}.metric strong{font-size:20px}
+.log{height:410px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.event{padding:8px;border-bottom:1px solid #223047}.event em{color:#8191a6;font-style:normal}.meeting{padding:10px;border-radius:10px;background:#151f2d;margin-bottom:8px}.meeting strong{display:block}.prompt{display:flex;gap:8px}.prompt input{flex:1;background:#0b111b;color:#e9eef5;border:1px solid #31445e;border-radius:8px;padding:9px}
+@media(max-width:850px){main{grid-template-columns:1fr}.project{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header><div><h1>TAREN GAME STUDIO HQ</h1><small id="projectName">No project loaded</small></div><div class="prompt"><input id="projectId" placeholder="Project UUID"><button onclick="connectStudio()">Connect</button></div></header>
+<main>
+<section class="panel">
+<div class="project">
+<div class="metric"><small>Agents working</small><strong id="working">0</strong></div>
+<div class="metric"><small>Open tasks</small><strong id="openTasks">0</strong></div>
+<div class="metric"><small>Meetings</small><strong id="meetingsCount">0</strong></div>
+<div class="metric"><small>Events</small><strong id="eventCount">0</strong></div>
+</div>
+<div class="office" id="office"></div>
+</section>
+<aside class="panel"><h3>Active / recent meetings</h3><div id="meetings"></div><h3>Event stream</h3><div class="log" id="log"></div></aside>
+</main>
+<script>
+let ws, count=0;
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+async function connectStudio(){
+ const id=document.getElementById("projectId").value.trim(); if(!id)return;
+ if(ws)ws.close();
+ const state=await fetch("/api/studio/state?project_id="+encodeURIComponent(id)).then(r=>{if(!r.ok)throw Error("Project not found");return r.json()});
+ render(state); count=state.events.length; document.getElementById("eventCount").textContent=count;
+ const proto=location.protocol==="https:"?"wss":"ws";
+ ws=new WebSocket(proto+"://"+location.host+"/ws/events?project_id="+encodeURIComponent(id));
+ ws.onmessage=e=>appendEvent(JSON.parse(e.data));
+}
+function render(s){
+ document.getElementById("projectName").textContent=s.project.name+" · "+s.project.status;
+ document.getElementById("working").textContent=s.agents.filter(a=>["WORKING","REVIEWING","TESTING","MEETING"].includes(a.state)).length;
+ document.getElementById("openTasks").textContent=s.tasks.filter(t=>!["DONE","FAILED","CANCELLED"].includes(t.status)).length;
+ document.getElementById("meetingsCount").textContent=s.meetings.length;
+ document.getElementById("office").innerHTML=s.agents.map(a=>'<div class="agent"><b>'+esc(a.id.toUpperCase())+'</b><div>'+esc(a.role)+'</div><span class="state '+esc(a.state)+'">'+esc(a.state)+'</span><div class="task">'+esc(a.current_task_id?"Task "+a.current_task_id:"No active task")+'</div></div>').join("");
+ document.getElementById("meetings").innerHTML=s.meetings.slice(0,5).map(m=>'<div class="meeting"><strong>'+esc(m.type.toUpperCase())+' · '+esc(m.status)+'</strong>'+esc(m.topic)+'<br><small>Devil\'s Advocate: '+esc(m.devil_advocate_agent_id||"—")+'</small></div>').join("");
+ document.getElementById("log").innerHTML="";
+ s.events.forEach(appendEvent);
+}
+function appendEvent(e){
+ count++; document.getElementById("eventCount").textContent=count;
+ const d=document.createElement("div");d.className="event";d.innerHTML="<strong>"+esc(e.type)+"</strong> <em>"+esc(e.actor)+"</em><br>"+esc(e.timestamp);
+ const log=document.getElementById("log");log.appendChild(d);log.scrollTop=log.scrollHeight;
+}
+</script>
+</body>
+</html>
