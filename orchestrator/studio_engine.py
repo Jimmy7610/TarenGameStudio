@@ -23,6 +23,13 @@ DEFAULT_ROSTER = {
     "antigravity": "experience_visual",
 }
 
+AGENT_DISPLAY = {
+    "chatgpt": {"name": "ChatGPT", "role": "Game Director"},
+    "claude": {"name": "Claude Code", "role": "Lead Engineer"},
+    "codex": {"name": "Codex", "role": "Engineering Review / QA"},
+    "antigravity": {"name": "Antigravity", "role": "Experience / Visual"},
+}
+
 
 class StudioEngine:
     def __init__(self, session: Session, runners: dict | None = None):
@@ -397,6 +404,8 @@ class StudioEngine:
             "agents": [
                 {
                     "id": a.id,
+                    "display_name": AGENT_DISPLAY.get(a.id, {}).get("name", a.id),
+                    "display_role": AGENT_DISPLAY.get(a.id, {}).get("role", a.role),
                     "role": a.role,
                     "state": a.state.value,
                     "current_task_id": str(a.current_task_id) if a.current_task_id else None,
