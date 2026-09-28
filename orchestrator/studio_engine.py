@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import asdict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +10,7 @@ from database.models import Agent, Event, Meeting, Project, Task
 from orchestrator.agent_service import AgentService
 from orchestrator.command_bus import CommandBus
 from orchestrator.meeting_service import MeetingService
+from orchestrator.review_service import ReviewService
 from orchestrator.scheduler import Scheduler
 from orchestrator.task_service import TaskService
 from runners import AgentRunRequest, FakeAntigravity, FakeChatGPT, FakeClaude, FakeCodex
@@ -31,6 +31,7 @@ class StudioEngine:
         self.agents = AgentService(session)
         self.tasks = TaskService(session)
         self.meetings = MeetingService(session)
+        self.reviews = ReviewService(session)
         self.scheduler = Scheduler(session)
         self.runners = runners or {
             "chatgpt": FakeChatGPT(),
@@ -114,7 +115,7 @@ class StudioEngine:
                     },
                 )
             )
-            message = self.meetings.add_message(
+            self.meetings.add_message(
                 meeting=meeting,
                 actor=agent.id,
                 content=result.summary,
@@ -155,7 +156,7 @@ class StudioEngine:
                 correlation_id=flow,
             )
 
-        design_task, design_event = self.tasks.create(
+        design_task, _ = self.tasks.create(
             project_id=project.id,
             title="Define first playable",
             description=f"Translate owner instruction into a constrained first playable plan: {owner_prompt}",
@@ -214,6 +215,168 @@ class StudioEngine:
             "assignments": [{"task_id": str(task.id), "agent_id": agent.id} for task, agent in assignments],
         }
 
+    def _latest_flow(self, project_id: uuid.UUID) -> uuid.UUID:
+        correlation_id = self.session.scalar(
+            select(Event.correlation_id)
+            .where(Event.project_id == project_id)
+            .order_by(Event.timestamp.desc(), Event.id.desc())
+            .limit(1)
+        )
+        if correlation_id is None:
+            raise ValueError("project has no active flow")
+        return correlation_id
+
+    def _available_reviewer(self, owner_agent_id: str) -> Agent:
+        preference = ["codex", "claude", "chatgpt", "antigravity"]
+        for agent_id in preference:
+            if agent_id == owner_agent_id:
+                continue
+            agent = self.session.get(Agent, agent_id)
+            if agent is not None and agent.state == AgentState.IDLE:
+                return agent
+        raise RuntimeError("no independent reviewer is available")
+
+    def run_cycle(self, project_id: uuid.UUID) -> dict:
+        flow = self._latest_flow(project_id)
+        working = list(self.session.scalars(
+            select(Task).where(Task.project_id == project_id, Task.status == TaskStatus.WORKING)
+            .order_by(Task.created_at, Task.id)
+        ))
+        completed: list[str] = []
+        reviews: list[dict] = []
+
+        for task in working:
+            owner = self.session.get(Agent, task.owner_agent_id)
+            if owner is None:
+                raise RuntimeError(f"task {task.id} has no available owner")
+            runner = self.runners[owner.id]
+            run_id = uuid.uuid4()
+            started = self.bus.emit(
+                project_id=project_id,
+                event_type="agent.run.started",
+                actor=owner.id,
+                correlation_id=flow,
+                payload={
+                    "run_id": str(run_id),
+                    "agent_id": owner.id,
+                    "task_id": str(task.id),
+                    "objective": task.description,
+                    "input": {"acceptance_criteria": task.acceptance_criteria},
+                },
+            )
+            result = runner.run(
+                AgentRunRequest(
+                    run_id=str(run_id),
+                    agent=owner.id,
+                    role=owner.role,
+                    objective=task.description,
+                    context_package={"acceptance_criteria": task.acceptance_criteria, "task_id": str(task.id)},
+                )
+            )
+            finished = self.bus.emit(
+                project_id=project_id,
+                event_type="agent.run.completed",
+                actor=owner.id,
+                correlation_id=flow,
+                causation_id=started.id,
+                payload={"run_id": str(run_id), "output": {"summary": result.summary}},
+            )
+            self.agents.set_state(
+                project_id=project_id,
+                agent=owner,
+                state=AgentState.WAITING,
+                current_task_id=task.id,
+                correlation_id=flow,
+                causation_id=finished.id,
+            )
+
+            reviewer = self._available_reviewer(owner.id)
+            review = self.reviews.request(
+                task=task,
+                creator_agent_id=owner.id,
+                reviewer_agent_id=reviewer.id,
+                correlation_id=flow,
+                causation_id=finished.id,
+            )
+            self.agents.set_state(
+                project_id=project_id,
+                agent=reviewer,
+                state=AgentState.REVIEWING,
+                current_task_id=task.id,
+                correlation_id=flow,
+            )
+
+            review_run_id = uuid.uuid4()
+            review_started = self.bus.emit(
+                project_id=project_id,
+                event_type="agent.run.started",
+                actor=reviewer.id,
+                correlation_id=flow,
+                payload={
+                    "run_id": str(review_run_id),
+                    "agent_id": reviewer.id,
+                    "task_id": str(task.id),
+                    "objective": f"Independently review task: {task.title}",
+                    "input": {"creator_summary": result.summary, "acceptance_criteria": task.acceptance_criteria},
+                },
+            )
+            review_result = self.runners[reviewer.id].run(
+                AgentRunRequest(
+                    run_id=str(review_run_id),
+                    agent=reviewer.id,
+                    role=reviewer.role,
+                    objective=f"Independently review task: {task.title}",
+                    context_package={"creator_summary": result.summary, "acceptance_criteria": task.acceptance_criteria},
+                )
+            )
+            review_finished = self.bus.emit(
+                project_id=project_id,
+                event_type="agent.run.completed",
+                actor=reviewer.id,
+                correlation_id=flow,
+                causation_id=review_started.id,
+                payload={"run_id": str(review_run_id), "output": {"summary": review_result.summary}},
+            )
+            self.reviews.accept(
+                review=review,
+                task=task,
+                summary=review_result.summary,
+                findings=list(review_result.findings),
+                correlation_id=flow,
+                causation_id=review_finished.id,
+            )
+            self.agents.set_state(project_id=project_id, agent=reviewer, state=AgentState.IDLE, correlation_id=flow)
+            self.agents.set_state(project_id=project_id, agent=owner, state=AgentState.IDLE, correlation_id=flow)
+            completed.append(str(task.id))
+            reviews.append({"task_id": str(task.id), "reviewer": reviewer.id})
+
+        promoted = self.scheduler.promote_ready(project_id=project_id, correlation_id=flow)
+        assigned = self.scheduler.assign_ready(project_id=project_id, correlation_id=flow)
+        self.session.commit()
+        return {
+            "completed_tasks": completed,
+            "reviews": reviews,
+            "promoted_tasks": [str(t.id) for t in promoted],
+            "assignments": [{"task_id": str(t.id), "agent_id": a.id} for t, a in assigned],
+        }
+
+    def run_until_idle(self, project_id: uuid.UUID, max_cycles: int = 12) -> dict:
+        cycles = []
+        for _ in range(max_cycles):
+            result = self.run_cycle(project_id)
+            cycles.append(result)
+            remaining = self.session.scalar(
+                select(Task.id).where(
+                    Task.project_id == project_id,
+                    Task.status.in_([TaskStatus.WORKING, TaskStatus.READY, TaskStatus.TODO, TaskStatus.REVIEW]),
+                ).limit(1)
+            )
+            if remaining is None:
+                break
+            if not result["completed_tasks"] and not result["assignments"] and not result["promoted_tasks"]:
+                break
+        return {"cycles": cycles, "state": self.state_snapshot(project_id)}
+
     def state_snapshot(self, project_id: uuid.UUID) -> dict:
         project = self.session.get(Project, project_id)
         if project is None:
@@ -222,7 +385,7 @@ class StudioEngine:
         tasks = list(self.session.scalars(select(Task).where(Task.project_id == project_id).order_by(Task.created_at, Task.id)))
         meetings = list(self.session.scalars(select(Meeting).where(Meeting.project_id == project_id).order_by(Meeting.created_at.desc())))
         latest_events = list(self.session.scalars(
-            select(Event).where(Event.project_id == project_id).order_by(Event.timestamp.desc(), Event.id.desc()).limit(50)
+            select(Event).where(Event.project_id == project_id).order_by(Event.timestamp.desc(), Event.id.desc()).limit(100)
         ))
         return {
             "project": {
