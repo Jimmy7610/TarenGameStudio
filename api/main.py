@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse\nfrom fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +16,13 @@ from orchestrator.studio_engine import StudioEngine
 
 
 app = FastAPI(title="Taren Game Studio", version="0.1.0")
+
+HQ_ASSET_DIR = os.getenv("TGS_HQ_ASSET_DIR", "/home/jimmy/agent-hq-assets")
+app.mount(
+    "/game-hq-assets",
+    StaticFiles(directory=HQ_ASSET_DIR, check_dir=False),
+    name="game-hq-assets",
+)
 
 
 class ProjectCreate(BaseModel):
