@@ -52,6 +52,26 @@ def submit_prompt(project_id: uuid.UUID, body: PromptRequest, session: Session =
     return StudioEngine(session).kickoff(project, body.prompt)
 
 
+@app.post("/api/projects/{project_id}/run-cycle")
+def run_cycle(project_id: uuid.UUID, session: Session = Depends(get_session)):
+    if session.get(Project, project_id) is None:
+        raise HTTPException(404, "project not found")
+    try:
+        return StudioEngine(session).run_cycle(project_id)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(409, str(exc))
+
+
+@app.post("/api/projects/{project_id}/run-until-idle")
+def run_until_idle(project_id: uuid.UUID, session: Session = Depends(get_session)):
+    if session.get(Project, project_id) is None:
+        raise HTTPException(404, "project not found")
+    try:
+        return StudioEngine(session).run_until_idle(project_id)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(409, str(exc))
+
+
 @app.get("/api/studio/state")
 def studio_state(project_id: uuid.UUID, session: Session = Depends(get_session)):
     try:
@@ -63,19 +83,22 @@ def studio_state(project_id: uuid.UUID, session: Session = Depends(get_session))
 @app.websocket("/ws/events")
 async def event_stream(websocket: WebSocket, project_id: uuid.UUID):
     await websocket.accept()
+    seen: set[uuid.UUID] = set()
     last_timestamp = None
-    last_id = None
     try:
         while True:
             with SessionLocal() as session:
                 stmt = select(Event).where(Event.project_id == project_id)
                 if last_timestamp is not None:
-                    stmt = stmt.where(
-                        (Event.timestamp > last_timestamp)
-                        | ((Event.timestamp == last_timestamp) & (Event.id != last_id))
+                    stmt = stmt.where(Event.timestamp >= last_timestamp)
+                events = list(
+                    session.scalars(
+                        stmt.order_by(Event.timestamp.asc(), Event.id.asc()).limit(500)
                     )
-                events = list(session.scalars(stmt.order_by(Event.timestamp.asc(), Event.id.asc()).limit(200)))
+                )
                 for event in events:
+                    if event.id in seen:
+                        continue
                     await websocket.send_json({
                         "id": str(event.id),
                         "type": event.event_type,
@@ -85,8 +108,10 @@ async def event_stream(websocket: WebSocket, project_id: uuid.UUID):
                         "causation_id": str(event.causation_id) if event.causation_id else None,
                         "payload": event.payload_json,
                     })
+                    seen.add(event.id)
                     last_timestamp = event.timestamp
-                    last_id = event.id
+                if len(seen) > 4000:
+                    seen = {e.id for e in events[-500:]}
             await asyncio.sleep(0.35)
     except WebSocketDisconnect:
         return
