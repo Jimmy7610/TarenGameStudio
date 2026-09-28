@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taren-game-studio"
+version = "0.1.0"
+description = "Deterministic orchestration core for Taren Game Studio"
+requires-python = ">=3.12"
+dependencies = [
+  "SQLAlchemy>=2.0,<3",
+  "alembic>=1.14,<2",
+  "psycopg[binary]>=3.2,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
