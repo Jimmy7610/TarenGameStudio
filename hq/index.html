@@ -1,62 +1,138 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Taren Game Studio HQ</title>
 <style>
-:root{font-family:Inter,system-ui,sans-serif;color:#e9eef5;background:#0b1018}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#172338,#0b1018 55%);min-height:100vh}
-header{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #26354a;background:#0d1420dd;position:sticky;top:0}
-h1{font-size:18px;margin:0;letter-spacing:.08em}button,input{font:inherit}button{background:#e9eef5;color:#0b1018;border:0;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer}
-main{display:grid;grid-template-columns:2fr 1fr;gap:14px;padding:14px}.panel{background:#101925;border:1px solid #26354a;border-radius:14px;padding:14px;box-shadow:0 18px 50px #0005}
-.office{min-height:500px;display:grid;grid-template-columns:repeat(2,1fr);gap:12px;align-content:start}.agent{border:1px solid #31445e;border-radius:12px;padding:15px;background:#142033;min-height:130px}.agent b{font-size:17px}.state{display:inline-block;margin-top:8px;padding:4px 8px;border-radius:999px;background:#26364b;font-size:12px}.MEETING{background:#564423}.WORKING{background:#214b3a}.WAITING{background:#3f3b5e}.BLOCKED{background:#642f36}.IDLE{background:#26364b}.task{margin-top:10px;color:#aab8ca;font-size:13px}
-.project{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}.metric{padding:10px;background:#0d1520;border:1px solid #26354a;border-radius:10px}.metric small{display:block;color:#8191a6}.metric strong{font-size:20px}
-.log{height:410px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.event{padding:8px;border-bottom:1px solid #223047}.event em{color:#8191a6;font-style:normal}.meeting{padding:10px;border-radius:10px;background:#151f2d;margin-bottom:8px}.meeting strong{display:block}.prompt{display:flex;gap:8px}.prompt input{flex:1;background:#0b111b;color:#e9eef5;border:1px solid #31445e;border-radius:8px;padding:9px}
-@media(max-width:850px){main{grid-template-columns:1fr}.project{grid-template-columns:repeat(2,1fr)}}
+:root{font-family:Inter,system-ui,-apple-system,sans-serif;color:#edf2f4;background:#070b0f}
+*{box-sizing:border-box}body{margin:0;background:#070b0f;min-height:100vh;overflow-x:hidden}
+button,input{font:inherit}.top{height:64px;display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid #27313a;background:#0a1015}
+.brand{margin-right:auto}.brand b{display:block;font-size:17px;letter-spacing:.04em}.brand small{font-size:10px;color:#68c9bd;letter-spacing:.12em;font-weight:800}
+.live{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #28594f;border-radius:999px;background:#10221f;color:#80e5c9;font-size:10px;font-weight:900}
+.dot{width:7px;height:7px;border-radius:50%;background:#64deb8;box-shadow:0 0 10px #64deb8}.connect{display:flex;gap:6px}.connect input{width:245px;background:#0d151c;color:#e8edef;border:1px solid #33414c;border-radius:6px;padding:8px}.connect button,.controls button{border:1px solid #33414c;border-radius:6px;background:#151f27;color:#e5e9ec;padding:8px 10px;cursor:pointer;font-size:10px;font-weight:800}.connect button{background:#1b9b8b;border-color:#38b5a5;color:white}
+.shell{height:calc(100vh - 64px);min-height:650px;display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:8px;padding:8px;background:#05080b}
+.left{display:flex;flex-direction:column;min-width:0;border:1px solid #28323a;border-radius:8px;overflow:hidden;background:#0a1015}.kpis{height:50px;display:flex;align-items:center;gap:7px;padding:6px 8px;border-bottom:1px solid #25303a;background:#080d12}
+.kpi{min-width:72px;padding:5px 8px;border:1px solid #273642;border-radius:6px;background:#101820;text-align:center}.kpi b{display:block;font:900 15px/1 monospace}.kpi small{font-size:7px;color:#87959f}.kpi-title{margin-right:auto}.kpi-title b{display:block;font-size:13px}.kpi-title small{color:#71808b;font-size:8px}
+.stage-wrap{position:relative;flex:1;min-height:0;background:#11171c;overflow:hidden}.stage{position:absolute;inset:0;margin:auto;aspect-ratio:1000/620;max-width:100%;max-height:100%;overflow:hidden;background:linear-gradient(135deg,#1b2630,#12191f);transform-origin:center;transition:transform .2s ease}
+.office-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:0}.fallback-office{position:absolute;inset:0;z-index:0;background:linear-gradient(90deg,#24303a 0 24%,#172028 24% 73%,#242c32 73%);display:grid;grid-template-columns:24% 49% 27%;opacity:.94}.room{border-right:2px solid #39444c;position:relative}.room:after{position:absolute;left:8px;top:8px;color:#78858e;font-size:9px;font-weight:900}.meeting-room:after{content:"MEETING"}.work-room:after{content:"DEV FLOOR"}.lounge-room:after{content:"LOUNGE / QA"}
+.agent{position:absolute;width:64px;height:82px;transform:translate(-50%,-82%);z-index:10;transition:left 1s cubic-bezier(.3,.7,.3,1),top 1s cubic-bezier(.3,.7,.3,1);cursor:pointer;filter:drop-shadow(0 6px 4px #0007)}.agent.moving{animation:walk .25s ease-in-out infinite alternate}@keyframes walk{to{margin-top:-3px}}
+.sprite{width:100%;height:100%;object-fit:contain;image-rendering:auto}.fallback-avatar{display:none;width:52px;height:52px;margin:16px auto 0;border-radius:15px;border:2px solid #dfe7e4;background:#1f786d;align-items:center;justify-content:center;font-weight:950;font-size:15px}
+.tag{position:absolute;left:50%;bottom:1px;transform:translate(-50%,100%);white-space:nowrap;padding:3px 6px;border:1px solid #43515b;border-radius:5px;background:#0d151ce8;font-size:8px;font-weight:900;box-shadow:0 2px 8px #0008}.tag:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;background:var(--status,#89959e)}
+.bubble{position:absolute;left:50%;top:-4px;transform:translate(-50%,-100%);max-width:145px;white-space:nowrap;padding:5px 8px;background:#eef2f2;color:#222a2e;border-radius:7px;font-size:8px;font-weight:850;opacity:0;transition:opacity .15s}.bubble.show{opacity:1}
+.controls{height:42px;display:flex;align-items:center;gap:6px;padding:6px;border-top:1px solid #26313b}.controls .spacer{flex:1}
+.right{display:grid;grid-template-rows:260px 1fr;gap:8px;min-height:0}.panel{border:1px solid #29343d;border-radius:8px;background:#0c1319;overflow:hidden}.panel h3{height:36px;margin:0;padding:10px;border-bottom:1px solid #26323b;background:#111920;font-size:11px}.panel-content{height:calc(100% - 36px);overflow:auto;padding:6px}
+.agent-card{display:grid;grid-template-columns:38px 1fr auto;gap:8px;align-items:center;padding:8px;border-bottom:1px solid #1d2730;cursor:pointer}.agent-card:hover{background:#151f27}.avatar-mini{width:34px;height:34px;border-radius:50%;border:2px solid #dfe7e4;background:#1e2e37 center/cover no-repeat}.agent-card b{display:block;font-size:10px}.agent-card small{display:block;margin-top:2px;font-size:8px;color:#96a3ad}.status-pill{font-size:7px;border:1px solid #334550;border-radius:999px;padding:3px 5px}
+.event{padding:7px;border-bottom:1px solid #1d2730;font-family:ui-monospace,monospace;font-size:8px}.event b{font-size:9px}.event small{display:block;color:#71808b;margin-top:2px}
+.inspector{position:absolute;right:350px;bottom:58px;width:300px;padding:12px;border:1px solid #3a4852;border-radius:9px;background:#091017f2;box-shadow:0 16px 50px #000c;z-index:50}.hidden{display:none}.inspector h3{margin:0 0 4px;font-size:14px}.inspector p{margin:5px 0;color:#93a1aa;font-size:9px}.taskbox{margin-top:8px;padding:8px;border:1px solid #26333d;border-radius:6px;background:#111920;font-size:9px}
+@media(max-width:1050px){.shell{grid-template-columns:1fr}.right{display:none}.connect input{width:180px}.inspector{right:16px}.shell{height:auto}.left{height:760px}}
 </style>
 </head>
 <body>
-<header><div><h1>TAREN GAME STUDIO HQ</h1><small id="projectName">No project loaded</small></div><div class="prompt"><input id="projectId" placeholder="Project UUID"><button onclick="connectStudio()">Connect</button></div></header>
-<main>
-<section class="panel">
-<div class="project">
-<div class="metric"><small>Agents working</small><strong id="working">0</strong></div>
-<div class="metric"><small>Open tasks</small><strong id="openTasks">0</strong></div>
-<div class="metric"><small>Meetings</small><strong id="meetingsCount">0</strong></div>
-<div class="metric"><small>Events</small><strong id="eventCount">0</strong></div>
+<div class="top">
+  <div class="brand"><small>AI GAME PRODUCTION FLOOR</small><b>Taren Game Studio HQ</b></div>
+  <div class="live"><span class="dot"></span><span id="liveText">STUDIO READY</span></div>
+  <div class="connect"><input id="projectId" placeholder="Project UUID"><button onclick="connectStudio()">Anslut</button></div>
 </div>
-<div class="office" id="office"></div>
-</section>
-<aside class="panel"><h3>Active / recent meetings</h3><div id="meetings"></div><h3>Event stream</h3><div class="log" id="log"></div></aside>
-</main>
+<div class="shell">
+  <section class="left">
+    <div class="kpis">
+      <div class="kpi-title"><small>SEPARAT FRÅN TAREN HQ</small><b id="projectName">Inget projekt anslutet</b></div>
+      <div class="kpi"><b id="working">0</b><small>AKTIVA</small></div>
+      <div class="kpi"><b id="openTasks">0</b><small>ÖPPNA TASKS</small></div>
+      <div class="kpi"><b id="meetingCount">0</b><small>MÖTEN</small></div>
+      <div class="kpi"><b id="eventCount">0</b><small>EVENTS</small></div>
+    </div>
+    <div class="stage-wrap">
+      <div id="stage" class="stage">
+        <div id="fallbackOffice" class="fallback-office"><div class="room meeting-room"></div><div class="room work-room"></div><div class="room lounge-room"></div></div>
+        <img id="officeBg" class="office-bg" src="/game-hq-assets/office.png?v=1" alt="">
+      </div>
+      <div id="inspector" class="inspector hidden"></div>
+    </div>
+    <div class="controls">
+      <button onclick="zoom(-.06)">−</button><button onclick="zoom(.06)">+ Zoom</button>
+      <button onclick="toggleNames()">Namn</button><button onclick="fullscreenHQ()">⛶ Helskärm</button>
+      <span class="spacer"></span><button onclick="refreshState()">↻ Uppdatera</button>
+    </div>
+  </section>
+  <aside class="right">
+    <section class="panel"><h3>● AI-teamet just nu</h3><div id="agentList" class="panel-content"></div></section>
+    <section class="panel"><h3>▣ Studio events</h3><div id="eventLog" class="panel-content"></div></section>
+  </aside>
+</div>
 <script>
-let ws, count=0;
-function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+const META={
+ chatgpt:{name:"ChatGPT",role:"Game Director",sprite:"taren",initials:"GPT"},
+ claude:{name:"Claude Code",role:"Lead Engineer",sprite:"kaj",initials:"CC"},
+ codex:{name:"Codex",role:"Engineering Review / QA",sprite:"gekko",initials:"CX"},
+ antigravity:{name:"Antigravity",role:"Experience / Visual",sprite:"bullee",initials:"AG"}
+};
+const STATUS_COLOR={IDLE:"#8d98a2",WORKING:"#65cda7",REVIEWING:"#6baedb",TESTING:"#866dca",MEETING:"#e1ae56",WAITING:"#c98ed2",BLOCKED:"#e46363",OFFLINE:"#69747c"};
+const POS={
+ chatgpt:{IDLE:[84,86],WORKING:[42,34],REVIEWING:[82,45],TESTING:[86,45],MEETING:[14,31],WAITING:[84,86],BLOCKED:[93,61],OFFLINE:[84,90]},
+ claude:{IDLE:[35,84],WORKING:[54,34],REVIEWING:[85,45],TESTING:[90,45],MEETING:[19,32],WAITING:[35,84],BLOCKED:[91,61],OFFLINE:[36,89]},
+ codex:{IDLE:[53,86],WORKING:[66,34],REVIEWING:[88,45],TESTING:[94,45],MEETING:[10,32],WAITING:[53,86],BLOCKED:[95,61],OFFLINE:[52,90]},
+ antigravity:{IDLE:[61,86],WORKING:[54,51],REVIEWING:[82,51],TESTING:[90,51],MEETING:[15,39],WAITING:[61,86],BLOCKED:[89,61],OFFLINE:[61,91]}
+};
+const BUBBLE={WORKING:"Jobbar",REVIEWING:"Granskar",TESTING:"Testar",MEETING:"Möte",WAITING:"Väntar",BLOCKED:"Blockerad",IDLE:"Paus",OFFLINE:"Offline"};
+let state=null,ws=null,eventIds=new Set(),scale=1,names=true,refreshTimer=null;
+
+function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function meta(a){return META[a.id]||{name:a.display_name||a.id,role:a.display_role||a.role,sprite:a.id,initials:a.id.slice(0,2).toUpperCase()}}
+function pos(a){return (POS[a.id]&&POS[a.id][a.state])||[50,50]}
+function ensureActors(){
+ const stage=document.getElementById("stage");
+ ["chatgpt","claude","codex","antigravity"].forEach(id=>{
+  if(document.getElementById("actor-"+id))return;
+  const m=META[id],el=document.createElement("div");el.className="agent";el.id="actor-"+id;
+  el.innerHTML='<div class="bubble"></div><img class="sprite" src="/game-hq-assets/'+m.sprite+'.png?v=1"><div class="fallback-avatar">'+m.initials+'</div><div class="tag">'+esc(m.name)+'</div>';
+  const img=el.querySelector(".sprite"),fallback=el.querySelector(".fallback-avatar");
+  img.onerror=()=>{img.style.display="none";fallback.style.display="flex"};
+  el.onclick=()=>inspect(id);stage.appendChild(el);
+ });
+}
+function move(a,animate=true){
+ const el=document.getElementById("actor-"+a.id);if(!el)return;const p=pos(a);
+ if(animate)el.classList.add("moving");el.style.left=p[0]+"%";el.style.top=p[1]+"%";el.style.setProperty("--status",STATUS_COLOR[a.state]||"#89959e");
+ el.querySelector(".tag").style.display=names?"block":"none";
+ const b=el.querySelector(".bubble");b.textContent=BUBBLE[a.state]||a.state;b.classList.add("show");setTimeout(()=>b.classList.remove("show"),1800);setTimeout(()=>el.classList.remove("moving"),1050);
+}
+function render(){
+ if(!state)return;ensureActors();
+ document.getElementById("projectName").textContent=state.project.name+" · "+state.project.status;
+ document.getElementById("working").textContent=state.agents.filter(a=>["WORKING","REVIEWING","TESTING","MEETING"].includes(a.state)).length;
+ document.getElementById("openTasks").textContent=state.tasks.filter(t=>!["DONE","FAILED","CANCELLED"].includes(t.status)).length;
+ document.getElementById("meetingCount").textContent=state.meetings.length;
+ state.agents.forEach(a=>move(a));
+ document.getElementById("agentList").innerHTML=state.agents.map(a=>{const m=meta(a);return '<div class="agent-card" onclick="inspect(\''+a.id+'\')"><span class="avatar-mini" style="background-image:url(/game-hq-assets/'+m.sprite+'.png)"></span><span><b>'+esc(m.name)+'</b><small>'+esc(m.role)+(a.current_task_id?' · task '+esc(a.current_task_id.slice(0,8)):'')+'</small></span><span class="status-pill">'+esc(a.state)+'</span></div>'}).join("");
+ document.getElementById("eventLog").innerHTML=state.events.slice().reverse().map(e=>'<div class="event"><b>'+esc(e.type)+'</b> · '+esc(e.actor)+'<small>'+esc(new Date(e.timestamp).toLocaleTimeString("sv-SE"))+'</small></div>').join("");
+ document.getElementById("eventCount").textContent=state.events.length;
+}
 async function connectStudio(){
- const id=document.getElementById("projectId").value.trim(); if(!id)return;
- if(ws)ws.close();
- const state=await fetch("/api/studio/state?project_id="+encodeURIComponent(id)).then(r=>{if(!r.ok)throw Error("Project not found");return r.json()});
- render(state); count=state.events.length; document.getElementById("eventCount").textContent=count;
- const proto=location.protocol==="https:"?"wss":"ws";
- ws=new WebSocket(proto+"://"+location.host+"/ws/events?project_id="+encodeURIComponent(id));
- ws.onmessage=e=>appendEvent(JSON.parse(e.data));
+ const id=document.getElementById("projectId").value.trim();if(!id)return;
+ if(ws)ws.close();await load(id);
+ const proto=location.protocol==="https:"?"wss":"ws";ws=new WebSocket(proto+"://"+location.host+"/ws/events?project_id="+encodeURIComponent(id));
+ ws.onopen=()=>document.getElementById("liveText").textContent="STUDIO LIVE";
+ ws.onmessage=e=>{const evt=JSON.parse(e.data);if(eventIds.has(evt.id))return;eventIds.add(evt.id);clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>load(id,false),120)};
+ ws.onclose=()=>document.getElementById("liveText").textContent="STUDIO OFFLINE";
 }
-function render(s){
- document.getElementById("projectName").textContent=s.project.name+" · "+s.project.status;
- document.getElementById("working").textContent=s.agents.filter(a=>["WORKING","REVIEWING","TESTING","MEETING"].includes(a.state)).length;
- document.getElementById("openTasks").textContent=s.tasks.filter(t=>!["DONE","FAILED","CANCELLED"].includes(t.status)).length;
- document.getElementById("meetingsCount").textContent=s.meetings.length;
- document.getElementById("office").innerHTML=s.agents.map(a=>'<div class="agent"><b>'+esc(a.id.toUpperCase())+'</b><div>'+esc(a.role)+'</div><span class="state '+esc(a.state)+'">'+esc(a.state)+'</span><div class="task">'+esc(a.current_task_id?"Task "+a.current_task_id:"No active task")+'</div></div>').join("");
- document.getElementById("meetings").innerHTML=s.meetings.slice(0,5).map(m=>'<div class="meeting"><strong>'+esc(m.type.toUpperCase())+' · '+esc(m.status)+'</strong>'+esc(m.topic)+'<br><small>Devil\'s Advocate: '+esc(m.devil_advocate_agent_id||"—")+'</small></div>').join("");
- document.getElementById("log").innerHTML="";
- s.events.forEach(appendEvent);
+async function load(id,reset=true){
+ const r=await fetch("/api/studio/state?project_id="+encodeURIComponent(id),{cache:"no-store"});if(!r.ok){document.getElementById("liveText").textContent="PROJECT NOT FOUND";return}
+ state=await r.json();if(reset){eventIds=new Set(state.events.map(e=>e.id))}render();
 }
-function appendEvent(e){
- count++; document.getElementById("eventCount").textContent=count;
- const d=document.createElement("div");d.className="event";d.innerHTML="<strong>"+esc(e.type)+"</strong> <em>"+esc(e.actor)+"</em><br>"+esc(e.timestamp);
- const log=document.getElementById("log");log.appendChild(d);log.scrollTop=log.scrollHeight;
+function refreshState(){const id=document.getElementById("projectId").value.trim();if(id)load(id,false)}
+function inspect(id){
+ if(!state)return;const a=state.agents.find(x=>x.id===id);if(!a)return;const m=meta(a),task=state.tasks.find(t=>t.id===a.current_task_id);
+ const p=document.getElementById("inspector");p.classList.remove("hidden");
+ p.innerHTML='<h3>'+esc(m.name)+'</h3><p>'+esc(m.role)+'</p><p>Status: <b>'+esc(a.state)+'</b></p><div class="taskbox">'+(task?'<b>'+esc(task.title)+'</b><br>'+esc(task.status)+' · '+esc(task.priority):'Ingen aktiv task')+'</div><button onclick="document.getElementById(\'inspector\').classList.add(\'hidden\')" style="margin-top:8px">Stäng</button>';
 }
+function zoom(delta){scale=Math.max(.88,Math.min(1.25,scale+delta));document.getElementById("stage").style.transform="scale("+scale+")"}
+function toggleNames(){names=!names;if(state)state.agents.forEach(a=>move(a,false))}
+function fullscreenHQ(){const el=document.querySelector(".left");if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen&&el.requestFullscreen()}
+document.getElementById("officeBg").onerror=function(){this.style.display="none";document.getElementById("fallbackOffice").style.display="grid"};
+document.getElementById("officeBg").onload=function(){document.getElementById("fallbackOffice").style.display="none"};
+ensureActors();
 </script>
 </body>
 </html>
