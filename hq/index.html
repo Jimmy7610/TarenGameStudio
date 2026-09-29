@@ -17,7 +17,7 @@ button,input{font:inherit}.top{height:64px;display:flex;align-items:center;gap:1
 .stage-wrap{position:relative;flex:1;min-height:0;background:#11171c;overflow:hidden}.stage{position:absolute;inset:0;margin:auto;aspect-ratio:1000/620;max-width:100%;max-height:100%;overflow:hidden;background:linear-gradient(135deg,#1b2630,#12191f);transform-origin:center;transition:transform .2s ease}
 .office-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:0}.fallback-office{position:absolute;inset:0;z-index:0;background:linear-gradient(90deg,#24303a 0 24%,#172028 24% 73%,#242c32 73%);display:grid;grid-template-columns:24% 49% 27%;opacity:.94}.room{border-right:2px solid #39444c;position:relative}.room:after{position:absolute;left:8px;top:8px;color:#78858e;font-size:9px;font-weight:900}.meeting-room:after{content:"MEETING"}.work-room:after{content:"DEV FLOOR"}.lounge-room:after{content:"LOUNGE / QA"}
 .agent{position:absolute;width:64px;height:82px;transform:translate(-50%,-82%);z-index:10;transition:left 1s cubic-bezier(.3,.7,.3,1),top 1s cubic-bezier(.3,.7,.3,1);cursor:pointer;filter:drop-shadow(0 6px 4px #0007)}.agent.moving{animation:walk .25s ease-in-out infinite alternate}@keyframes walk{to{margin-top:-3px}}
-.sprite{width:100%;height:100%;object-fit:contain;image-rendering:auto}.fallback-avatar{display:none;width:52px;height:52px;margin:16px auto 0;border-radius:15px;border:2px solid #dfe7e4;background:#1f786d;align-items:center;justify-content:center;font-weight:950;font-size:15px}
+.sprite{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}.fallback-avatar{display:none;width:52px;height:52px;margin:16px auto 0;border-radius:15px;border:2px solid #dfe7e4;background:#1f786d;align-items:center;justify-content:center;font-weight:950;font-size:15px}
 .tag{position:absolute;left:50%;bottom:1px;transform:translate(-50%,100%);white-space:nowrap;padding:3px 6px;border:1px solid #43515b;border-radius:5px;background:#0d151ce8;font-size:8px;font-weight:900;box-shadow:0 2px 8px #0008}.tag:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;background:var(--status,#89959e)}
 .bubble{position:absolute;left:50%;top:-4px;transform:translate(-50%,-100%);max-width:145px;white-space:nowrap;padding:5px 8px;background:#eef2f2;color:#222a2e;border-radius:7px;font-size:8px;font-weight:850;opacity:0;transition:opacity .15s}.bubble.show{opacity:1}
 .controls{height:42px;display:flex;align-items:center;gap:6px;padding:6px;border-top:1px solid #26313b}.controls .spacer{flex:1}
@@ -63,10 +63,10 @@ button,input{font:inherit}.top{height:64px;display:flex;align-items:center;gap:1
 </div>
 <script>
 const META={
- chatgpt:{name:"ChatGPT",role:"Game Director",sprite:"taren",initials:"GPT"},
- claude:{name:"Claude Code",role:"Lead Engineer",sprite:"kaj",initials:"CC"},
- codex:{name:"Codex",role:"Engineering Review / QA",sprite:"gekko",initials:"CX"},
- antigravity:{name:"Antigravity",role:"Experience / Visual",sprite:"bullee",initials:"AG"}
+ chatgpt:{name:"ChatGPT",role:"Game Director",asset:"/studio-assets/agents/chatgpt.svg?v=2",initials:"GPT"},
+ claude:{name:"Claude Code",role:"Lead Engineer",asset:"/studio-assets/agents/claude.svg?v=2",initials:"CC"},
+ codex:{name:"Codex",role:"Engineering Review / QA",asset:"/studio-assets/agents/codex.svg?v=2",initials:"CX"},
+ antigravity:{name:"Antigravity",role:"Experience / Visual",asset:"/studio-assets/agents/antigravity.svg?v=2",initials:"AG"}
 };
 const STATUS_COLOR={IDLE:"#8d98a2",WORKING:"#65cda7",REVIEWING:"#6baedb",TESTING:"#866dca",MEETING:"#e1ae56",WAITING:"#c98ed2",BLOCKED:"#e46363",OFFLINE:"#69747c"};
 const POS={
@@ -79,14 +79,14 @@ const BUBBLE={WORKING:"Jobbar",REVIEWING:"Granskar",TESTING:"Testar",MEETING:"M�
 let state=null,ws=null,eventIds=new Set(),scale=1,names=true,refreshTimer=null;
 
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
-function meta(a){return META[a.id]||{name:a.display_name||a.id,role:a.display_role||a.role,sprite:a.id,initials:a.id.slice(0,2).toUpperCase()}}
+function meta(a){return META[a.id]||{name:a.display_name||a.id,role:a.display_role||a.role,asset:"/studio-assets/agents/"+a.id+".svg?v=2",initials:a.id.slice(0,2).toUpperCase()}}
 function pos(a){return (POS[a.id]&&POS[a.id][a.state])||[50,50]}
 function ensureActors(){
  const stage=document.getElementById("stage");
  ["chatgpt","claude","codex","antigravity"].forEach(id=>{
   if(document.getElementById("actor-"+id))return;
   const m=META[id],el=document.createElement("div");el.className="agent";el.id="actor-"+id;
-  el.innerHTML='<div class="bubble"></div><img class="sprite" src="/game-hq-assets/'+m.sprite+'.png?v=1"><div class="fallback-avatar">'+m.initials+'</div><div class="tag">'+esc(m.name)+'</div>';
+  el.innerHTML='<div class="bubble"></div><img class="sprite" src="'+m.asset+'"><div class="fallback-avatar">'+m.initials+'</div><div class="tag">'+esc(m.name)+'</div>';
   const img=el.querySelector(".sprite"),fallback=el.querySelector(".fallback-avatar");
   img.onerror=()=>{img.style.display="none";fallback.style.display="flex"};
   el.onclick=()=>inspect(id);stage.appendChild(el);
@@ -105,7 +105,7 @@ function render(){
  document.getElementById("openTasks").textContent=state.tasks.filter(t=>!["DONE","FAILED","CANCELLED"].includes(t.status)).length;
  document.getElementById("meetingCount").textContent=state.meetings.length;
  state.agents.forEach(a=>move(a));
- document.getElementById("agentList").innerHTML=state.agents.map(a=>{const m=meta(a);return '<div class="agent-card" onclick="inspect(\''+a.id+'\')"><span class="avatar-mini" style="background-image:url(/game-hq-assets/'+m.sprite+'.png)"></span><span><b>'+esc(m.name)+'</b><small>'+esc(m.role)+(a.current_task_id?' · task '+esc(a.current_task_id.slice(0,8)):'')+'</small></span><span class="status-pill">'+esc(a.state)+'</span></div>'}).join("");
+ document.getElementById("agentList").innerHTML=state.agents.map(a=>{const m=meta(a);return '<div class="agent-card" onclick="inspect(\''+a.id+'\')"><span class="avatar-mini" style="background-image:url('+m.asset+')"></span><span><b>'+esc(m.name)+'</b><small>'+esc(m.role)+(a.current_task_id?' · task '+esc(a.current_task_id.slice(0,8)):'')+'</small></span><span class="status-pill">'+esc(a.state)+'</span></div>'}).join("");
  document.getElementById("eventLog").innerHTML=state.events.slice().reverse().map(e=>'<div class="event"><b>'+esc(e.type)+'</b> · '+esc(e.actor)+'<small>'+esc(new Date(e.timestamp).toLocaleTimeString("sv-SE"))+'</small></div>').join("");
  document.getElementById("eventCount").textContent=state.events.length;
 }
