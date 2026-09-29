@@ -4,6 +4,7 @@ from enum import StrEnum
 class ProjectStatus(StrEnum):
     CREATED = "CREATED"
     ACTIVE = "ACTIVE"
+    READY = "READY"
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"

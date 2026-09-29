@@ -10,6 +10,7 @@ from database.models import Agent, Artifact, Decision, Event, Meeting, Project, 
 from orchestrator.agent_service import AgentService
 from orchestrator.command_bus import CommandBus
 from orchestrator.meeting_service import MeetingService
+from orchestrator.project_service import ProjectService
 from orchestrator.review_service import ReviewService
 from orchestrator.scheduler import Scheduler
 from orchestrator.task_service import TaskService
@@ -38,6 +39,7 @@ class StudioEngine:
         self.agents = AgentService(session)
         self.tasks = TaskService(session)
         self.meetings = MeetingService(session)
+        self.projects = ProjectService(session)
         self.reviews = ReviewService(session)
         self.scheduler = Scheduler(session)
         self.runners = runners or {
@@ -85,6 +87,11 @@ class StudioEngine:
             actor="jimmy",
             correlation_id=flow,
             payload={"prompt": owner_prompt},
+        )
+        self.projects.activate(
+            project=project,
+            correlation_id=flow,
+            causation_id=instruction.id,
         )
 
         meeting, meeting_started = self.meetings.start(
@@ -379,10 +386,49 @@ class StudioEngine:
                 ).limit(1)
             )
             if remaining is None:
+                project = self.session.get(Project, project_id)
+                if project is not None and project.status.value != "READY":
+                    self.projects.ready(project=project, correlation_id=self._latest_flow(project_id))
+                    self.session.commit()
                 break
             if not result["completed_tasks"] and not result["assignments"] and not result["promoted_tasks"]:
                 break
         return {"cycles": cycles, "state": self.state_snapshot(project_id)}
+
+    def reconcile_project_status(self, project_id: uuid.UUID) -> dict:
+        project = self.session.get(Project, project_id)
+        if project is None:
+            raise KeyError(str(project_id))
+
+        flow = self._latest_flow(project_id)
+        unfinished = self.session.scalar(
+            select(Task.id).where(
+                Task.project_id == project_id,
+                Task.status.in_([TaskStatus.TODO, TaskStatus.READY, TaskStatus.WORKING, TaskStatus.REVIEW, TaskStatus.BLOCKED]),
+            ).limit(1)
+        )
+        any_task = self.session.scalar(
+            select(Task.id).where(Task.project_id == project_id).limit(1)
+        )
+
+        if unfinished is not None:
+            if project.status.value != "ACTIVE":
+                self.projects.activate(project=project, correlation_id=flow)
+                self.session.commit()
+        elif any_task is not None:
+            if project.status.value != "READY":
+                # Legacy CREATED projects may already have a completed batch.
+                if project.status.value == "CREATED":
+                    activated = self.projects.activate(project=project, correlation_id=flow)
+                    self.projects.ready(project=project, correlation_id=flow, causation_id=activated.id)
+                else:
+                    self.projects.ready(project=project, correlation_id=flow)
+                self.session.commit()
+
+        return {
+            "project_id": str(project.id),
+            "status": project.status.value,
+        }
 
     def state_snapshot(self, project_id: uuid.UUID) -> dict:
         project = self.session.get(Project, project_id)
