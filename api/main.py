@@ -25,6 +25,11 @@ app.mount(
     StaticFiles(directory=HQ_ASSET_DIR, check_dir=False),
     name="game-hq-assets",
 )
+app.mount(
+    "/studio-assets",
+    StaticFiles(directory=Path(__file__).resolve().parents[1] / "hq" / "assets"),
+    name="studio-assets",
+)
 
 
 class ProjectCreate(BaseModel):
