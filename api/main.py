@@ -91,6 +91,16 @@ def create_project(body: ProjectCreate, session: Session = Depends(get_session))
     return {"id": str(project.id), "name": project.name}
 
 
+@app.post("/api/projects/{project_id}/reconcile-status")
+def reconcile_project_status(project_id: uuid.UUID, session: Session = Depends(get_session)):
+    if session.get(Project, project_id) is None:
+        raise HTTPException(404, "project not found")
+    try:
+        return StudioEngine(session).reconcile_project_status(project_id)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(409, str(exc))
+
+
 @app.post("/api/projects/{project_id}/prompt")
 def submit_prompt(project_id: uuid.UUID, body: PromptRequest, session: Session = Depends(get_session)):
     project = session.get(Project, project_id)
