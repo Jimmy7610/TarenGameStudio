@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.enums import AgentState, Priority, TaskStatus
-from database.models import Agent, Event, Meeting, Project, Task
+from database.models import Agent, Artifact, Decision, Event, Meeting, Project, Review, Task
 from orchestrator.agent_service import AgentService
 from orchestrator.command_bus import CommandBus
 from orchestrator.meeting_service import MeetingService
@@ -391,6 +391,9 @@ class StudioEngine:
         agents = list(self.session.scalars(select(Agent).order_by(Agent.id)))
         tasks = list(self.session.scalars(select(Task).where(Task.project_id == project_id).order_by(Task.created_at, Task.id)))
         meetings = list(self.session.scalars(select(Meeting).where(Meeting.project_id == project_id).order_by(Meeting.created_at.desc())))
+        decisions = list(self.session.scalars(select(Decision).where(Decision.project_id == project_id).order_by(Decision.created_at.desc())))
+        reviews = list(self.session.scalars(select(Review).where(Review.project_id == project_id).order_by(Review.created_at.desc())))
+        artifacts = list(self.session.scalars(select(Artifact).where(Artifact.project_id == project_id).order_by(Artifact.created_at.desc())))
         latest_events = list(self.session.scalars(
             select(Event).where(Event.project_id == project_id).order_by(Event.timestamp.desc(), Event.id.desc()).limit(100)
         ))
@@ -434,6 +437,43 @@ class StudioEngine:
                     "outcome_summary": m.outcome_summary,
                 }
                 for m in meetings
+            ],
+            "decisions": [
+                {
+                    "id": str(d.id),
+                    "key": d.decision_key,
+                    "decision": d.decision,
+                    "reason": d.reason,
+                    "rejected": d.rejected_json,
+                    "impacts": d.impacts_json,
+                    "markdown_path": d.markdown_path,
+                    "created_at": d.created_at.isoformat(),
+                }
+                for d in decisions
+            ],
+            "reviews": [
+                {
+                    "id": str(r.id),
+                    "task_id": str(r.task_id),
+                    "creator_agent_id": r.creator_agent_id,
+                    "reviewer_agent_id": r.reviewer_agent_id,
+                    "status": r.status.value,
+                    "summary": r.summary,
+                    "findings": r.findings_json,
+                    "created_at": r.created_at.isoformat(),
+                }
+                for r in reviews
+            ],
+            "artifacts": [
+                {
+                    "id": str(a.id),
+                    "task_id": str(a.task_id) if a.task_id else None,
+                    "type": a.artifact_type.value,
+                    "ref": a.ref,
+                    "metadata": a.metadata_json,
+                    "created_at": a.created_at.isoformat(),
+                }
+                for a in artifacts
             ],
             "events": [
                 {
