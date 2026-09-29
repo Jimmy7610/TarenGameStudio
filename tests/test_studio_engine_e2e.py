@@ -43,6 +43,9 @@ def test_fake_studio_runs_kickoff_and_complete_pipeline(session):
 
     snapshot = result["state"]
     assert all(task["status"] == "DONE" for task in snapshot["tasks"])
+    assert len(snapshot["decisions"]) == 1
+    assert len(snapshot["reviews"]) == 4
+    assert "artifacts" in snapshot
 
 
 def test_api_module_exposes_hq_and_realtime_routes():
@@ -50,6 +53,16 @@ def test_api_module_exposes_hq_and_realtime_routes():
 
     paths = {route.path for route in app.routes}
     assert "/" in paths
+    assert "/hq" in paths
+    assert "/projects" in paths
+    assert "/tasks" in paths
+    assert "/meetings" in paths
+    assert "/decisions" in paths
+    assert "/builds" in paths
+    assert "/playtests" in paths
+    assert "/logs" in paths
+    assert "/settings" in paths
+    assert "/api/projects" in paths
     assert "/api/projects/{project_id}/prompt" in paths
     assert "/api/projects/{project_id}/run-cycle" in paths
     assert "/api/projects/{project_id}/run-until-idle" in paths

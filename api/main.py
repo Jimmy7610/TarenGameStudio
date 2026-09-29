@@ -46,8 +46,41 @@ def startup() -> None:
 
 
 @app.get("/")
-def hq() -> FileResponse:
+def studio_home() -> FileResponse:
     return FileResponse(Path(__file__).resolve().parents[1] / "hq" / "index.html")
+
+
+@app.get("/hq")
+def hq() -> FileResponse:
+    return FileResponse(Path(__file__).resolve().parents[1] / "hq" / "hq.html")
+
+
+@app.get("/projects")
+@app.get("/tasks")
+@app.get("/meetings")
+@app.get("/decisions")
+@app.get("/builds")
+@app.get("/playtests")
+@app.get("/logs")
+@app.get("/settings")
+def studio_page() -> FileResponse:
+    return FileResponse(Path(__file__).resolve().parents[1] / "hq" / "index.html")
+
+
+@app.get("/api/projects")
+def list_projects(session: Session = Depends(get_session)):
+    projects = list(session.scalars(select(Project).order_by(Project.created_at.desc())))
+    return [
+        {
+            "id": str(project.id),
+            "name": project.name,
+            "status": project.status.value,
+            "current_milestone": project.current_milestone,
+            "created_at": project.created_at.isoformat(),
+            "updated_at": project.updated_at.isoformat(),
+        }
+        for project in projects
+    ]
 
 
 @app.post("/api/projects")
