@@ -1,6 +1,6 @@
 from sqlalchemy import func, select
 
-from database.enums import AgentState, TaskStatus
+from database.enums import AgentState, ProjectStatus, TaskStatus
 from database.models import Agent, AgentRun, Decision, Event, Meeting, Project, Review, Task
 from orchestrator.studio_engine import StudioEngine
 
@@ -40,8 +40,12 @@ def test_fake_studio_runs_kickoff_and_complete_pipeline(session):
     assert "agent.run.started" in event_types
     assert "agent.run.completed" in event_types
     assert "review.accepted" in event_types
+    assert "project.activated" in event_types
+    assert "project.ready" in event_types
 
     snapshot = result["state"]
+    assert project.status == ProjectStatus.READY
+    assert snapshot["project"]["status"] == "READY"
     assert all(task["status"] == "DONE" for task in snapshot["tasks"])
     assert len(snapshot["decisions"]) == 1
     assert len(snapshot["reviews"]) == 4
@@ -63,6 +67,7 @@ def test_api_module_exposes_hq_and_realtime_routes():
     assert "/logs" in paths
     assert "/settings" in paths
     assert "/api/projects" in paths
+    assert "/api/projects/{project_id}/reconcile-status" in paths
     assert "/api/projects/{project_id}/prompt" in paths
     assert "/api/projects/{project_id}/run-cycle" in paths
     assert "/api/projects/{project_id}/run-until-idle" in paths
