@@ -24,7 +24,7 @@ button,input{font:inherit}.top{height:64px;display:flex;align-items:center;gap:1
 .right{display:grid;grid-template-rows:260px 1fr;gap:8px;min-height:0}.panel{border:1px solid #29343d;border-radius:8px;background:#0c1319;overflow:hidden}.panel h3{height:36px;margin:0;padding:10px;border-bottom:1px solid #26323b;background:#111920;font-size:11px}.panel-content{height:calc(100% - 36px);overflow:auto;padding:6px}
 .agent-card{display:grid;grid-template-columns:38px 1fr auto;gap:8px;align-items:center;padding:8px;border-bottom:1px solid #1d2730;cursor:pointer}.agent-card:hover{background:#151f27}.avatar-mini{width:34px;height:34px;border-radius:50%;border:2px solid #dfe7e4;background:#1e2e37 center/cover no-repeat}.agent-card b{display:block;font-size:10px}.agent-card small{display:block;margin-top:2px;font-size:8px;color:#96a3ad}.status-pill{font-size:7px;border:1px solid #334550;border-radius:999px;padding:3px 5px}
 .event{padding:7px;border-bottom:1px solid #1d2730;font-family:ui-monospace,monospace;font-size:8px}.event b{font-size:9px}.event small{display:block;color:#71808b;margin-top:2px}
-.inspector{position:absolute;right:350px;bottom:58px;width:300px;padding:12px;border:1px solid #3a4852;border-radius:9px;background:#091017f2;box-shadow:0 16px 50px #000c;z-index:50}.hidden{display:none}.inspector h3{margin:0 0 4px;font-size:14px}.inspector p{margin:5px 0;color:#93a1aa;font-size:9px}.taskbox{margin-top:8px;padding:8px;border:1px solid #26333d;border-radius:6px;background:#111920;font-size:9px}
+.inspector{position:absolute;right:350px;bottom:58px;width:300px;padding:12px;border:1px solid #3a4852;border-radius:9px;background:#091017f2;box-shadow:0 16px 50px #000c;z-index:50}.hidden{display:none}.inspector h3{margin:0 0 4px;font-size:14px}.inspector p{margin:5px 0;color:#93a1aa;font-size:9px}.taskbox{margin-top:8px;padding:8px;border:1px solid #26333d;border-radius:6px;background:#111920;font-size:9px}.inspector-head{display:flex;align-items:center;gap:10px}.inspector-head img{width:54px;height:54px;object-fit:contain;image-rendering:pixelated}.inspector-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}.inspector-stats div{padding:7px;border:1px solid #26333d;border-radius:6px;background:#0e171d;font-size:8px}.inspector-stats b{display:block;font-size:11px;margin-bottom:2px}.event-mini{padding:6px 0;border-bottom:1px solid #1d2830;font-size:8px}.event-mini:last-child{border-bottom:0}.event-mini small{display:block;color:#7f8b94;margin-top:2px}.inspector-section{margin-top:10px;padding-top:8px;border-top:1px solid #24313a}.inspector-section h4{margin:0 0 6px;font-size:8px;color:#8fa0aa;text-transform:uppercase;letter-spacing:.08em}
 @media(max-width:1050px){.shell{grid-template-columns:1fr}.right{display:none}.connect input{width:180px}.inspector{right:16px}.shell{height:auto}.left{height:760px}}
 </style>
 </head>
@@ -108,7 +108,12 @@ function move(a,animate=true){
  const el=document.getElementById("actor-"+a.id);if(!el)return;const p=pos(a);
  if(animate)el.classList.add("moving");el.style.left=p[0]+"%";el.style.top=p[1]+"%";el.style.setProperty("--status",STATUS_COLOR[a.state]||"#89959e");
  el.querySelector(".tag").style.display=names?"block":"none";
- const b=el.querySelector(".bubble");b.textContent=BUBBLE[a.state]||a.state;b.classList.add("show");setTimeout(()=>b.classList.remove("show"),1800);setTimeout(()=>el.classList.remove("moving"),1050);
+ const task=state&&state.tasks?state.tasks.find(t=>t.id===a.current_task_id):null;
+ const b=el.querySelector(".bubble");
+ b.textContent=task&&["WORKING","REVIEWING","TESTING"].includes(a.state)?task.title:(BUBBLE[a.state]||a.state);
+ b.classList.add("show");
+ setTimeout(()=>b.classList.remove("show"),2400);
+ setTimeout(()=>el.classList.remove("moving"),1050);
 }
 function render(){
  if(!state)return;ensureActors();
@@ -117,6 +122,13 @@ function render(){
  document.getElementById("openTasks").textContent=state.tasks.filter(t=>!["DONE","FAILED","CANCELLED"].includes(t.status)).length;
  document.getElementById("meetingCount").textContent=state.meetings.length;
  state.agents.forEach(a=>move(a));
+ const activeMeeting=state.meetings.find(m=>m.status==="ACTIVE"||m.status==="OPEN");
+ if(activeMeeting&&Array.isArray(activeMeeting.participants)){
+  activeMeeting.participants.forEach(id=>{
+   const a=state.agents.find(x=>x.id===id);
+   if(a&&a.state==="MEETING")move(a,true);
+  });
+ }
  document.getElementById("agentList").innerHTML=state.agents.map(a=>{const m=meta(a);return '<div class="agent-card" onclick="inspect(\''+a.id+'\')"><span class="avatar-mini" style="background-image:url('+m.asset+')"></span><span><b>'+esc(m.name)+'</b><small>'+esc(m.role)+(a.current_task_id?' · task '+esc(a.current_task_id.slice(0,8)):'')+'</small></span><span class="status-pill">'+esc(a.state)+'</span></div>'}).join("");
  document.getElementById("eventLog").innerHTML=state.events.slice().reverse().map(e=>'<div class="event"><b>'+esc(e.type)+'</b> · '+esc(e.actor)+'<small>'+esc(new Date(e.timestamp).toLocaleTimeString("sv-SE"))+'</small></div>').join("");
  document.getElementById("eventCount").textContent=state.events.length;
@@ -136,9 +148,23 @@ async function load(id,reset=true){
 }
 function refreshState(){const id=document.getElementById("projectId").value.trim();if(id)load(id,false)}
 function inspect(id){
- if(!state)return;const a=state.agents.find(x=>x.id===id);if(!a)return;const m=meta(a),task=state.tasks.find(t=>t.id===a.current_task_id);
+ if(!state)return;
+ const a=state.agents.find(x=>x.id===id);if(!a)return;
+ const m=meta(a),task=state.tasks.find(t=>t.id===a.current_task_id);
+ const owned=state.tasks.filter(t=>t.owner_agent_id===id);
+ const done=owned.filter(t=>t.status==="DONE").length;
+ const active=owned.filter(t=>["READY","WORKING","REVIEW"].includes(t.status)).length;
+ const latest=(state.events||[]).filter(e=>{
+   const p=e.payload||{};
+   return e.actor===id||p.agent_id===id||p.owner_agent_id===id||p.reviewer_agent_id===id;
+ }).slice(-6).reverse();
+ const eventHtml=latest.length?latest.map(e=>'<div class="event-mini"><b>'+esc(e.type)+'</b><small>'+esc(new Date(e.timestamp).toLocaleTimeString("sv-SE"))+' · '+esc(e.actor)+'</small></div>').join(""):'<div class="event-mini">Inga direkta agent-events ännu.</div>';
  const p=document.getElementById("inspector");p.classList.remove("hidden");
- p.innerHTML='<h3>'+esc(m.name)+'</h3><p>'+esc(m.role)+'</p><p>Status: <b>'+esc(a.state)+'</b></p><div class="taskbox">'+(task?'<b>'+esc(task.title)+'</b><br>'+esc(task.status)+' · '+esc(task.priority):'Ingen aktiv task')+'</div><button onclick="document.getElementById(\'inspector\').classList.add(\'hidden\')" style="margin-top:8px">Stäng</button>';
+ p.innerHTML='<div class="inspector-head"><img src="'+m.asset+'" alt=""><div><h3>'+esc(m.name)+'</h3><p>'+esc(m.role)+'</p><p>Status: <b>'+esc(a.state)+'</b></p></div></div>'+
+ '<div class="taskbox">'+(task?'<b>'+esc(task.title)+'</b><br>'+esc(task.status)+' · '+esc(task.priority):'Ingen aktiv task')+'</div>'+
+ '<div class="inspector-stats"><div><b>'+owned.length+'</b>tasks</div><div><b>'+done+'</b>klara</div><div><b>'+active+'</b>aktiva</div></div>'+
+ '<div class="inspector-section"><h4>Senaste agent-events</h4>'+eventHtml+'</div>'+
+ '<button onclick="document.getElementById(\'inspector\').classList.add(\'hidden\')" style="margin-top:10px">Stäng</button>';
 }
 function zoom(delta){scale=Math.max(.88,Math.min(1.25,scale+delta));document.getElementById("stage").style.transform="scale("+scale+")"}
 function toggleNames(){names=!names;if(state)state.agents.forEach(a=>move(a,false))}
