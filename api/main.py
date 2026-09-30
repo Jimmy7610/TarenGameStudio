@@ -40,6 +40,11 @@ class PromptRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
 
 
+class HumanVerificationRequest(BaseModel):
+    approved: bool
+    notes: str = Field(default="", max_length=4_000)
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_database()
@@ -107,6 +112,29 @@ def submit_prompt(project_id: uuid.UUID, body: PromptRequest, session: Session =
     if project is None:
         raise HTTPException(404, "project not found")
     return StudioEngine(session).kickoff(project, body.prompt)
+
+
+@app.post("/api/projects/{project_id}/tasks/{task_id}/human-verification")
+def human_verification(
+    project_id: uuid.UUID,
+    task_id: uuid.UUID,
+    body: HumanVerificationRequest,
+    session: Session = Depends(get_session),
+):
+    if session.get(Project, project_id) is None:
+        raise HTTPException(404, "project not found")
+    try:
+        return StudioEngine(session).submit_human_verification(
+            project_id,
+            task_id,
+            approved=body.approved,
+            notes=body.notes,
+            actor="jimmy",
+        )
+    except KeyError:
+        raise HTTPException(404, "task not found")
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(409, str(exc))
 
 
 @app.post("/api/projects/{project_id}/run-cycle")

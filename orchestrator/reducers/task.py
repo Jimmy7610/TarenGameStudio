@@ -56,10 +56,12 @@ class TaskReducer:
             ensure_task_transition(task.status, TaskStatus.WORKING)
             task.status = TaskStatus.WORKING
             task.rework_count += 1
-        elif et == "review.accepted" or et == "task.completed":
+        elif et in ("review.accepted", "task.completed", "human_verification.accepted"):
             if task.status != TaskStatus.DONE:
                 ensure_task_transition(task.status, TaskStatus.DONE)
                 task.status = TaskStatus.DONE
+        elif et == "human_verification.rejected":
+            return task
         elif et == "task.blocked":
             ensure_task_transition(task.status, TaskStatus.BLOCKED)
             task.status = TaskStatus.BLOCKED
