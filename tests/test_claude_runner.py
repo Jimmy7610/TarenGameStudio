@@ -121,3 +121,84 @@ def test_claude_code_runner_read_only_phase_excludes_write_tools(monkeypatch, tm
     assert "Grep" in tools
     assert "Write" not in tools
     assert "Edit" not in tools
+
+
+def test_claude_code_runner_parses_verification_marker(monkeypatch, tmp_path):
+    monkeypatch.setattr("runners.claude_code.shutil.which", lambda _: "/usr/bin/claude")
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": (
+                        "Built and tested.\n"
+                        'TGS_VERIFICATION: {"build_ran": true, "build_passed": true, '
+                        '"tests_ran": true, "tests_passed": true, "playable_verified": true}'
+                    ),
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("runners.claude_code.subprocess.run", fake_run)
+    runner = ClaudeCodeRunner(executable="claude", workspace_root=tmp_path)
+
+    result = runner.run(
+        AgentRunRequest(
+            run_id="run-v",
+            agent="claude",
+            role="lead_engineer",
+            objective="Implement",
+            context_package={"project_id": "project-v"},
+            allowed_actions=("read", "write", "edit", "glob", "grep", "bash"),
+        )
+    )
+
+    assert result.verification["build_ran"] is True
+    assert result.verification["build_passed"] is True
+    assert result.verification["playable_verified"] is True
+
+
+def test_claude_code_runner_allows_bash_only_when_requested(monkeypatch, tmp_path):
+    monkeypatch.setattr("runners.claude_code.shutil.which", lambda _: "/usr/bin/claude")
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": 'Done.\nTGS_VERIFICATION: {"build_ran": false, "build_passed": false, "tests_ran": false, "tests_passed": false, "playable_verified": false}',
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("runners.claude_code.subprocess.run", fake_run)
+    runner = ClaudeCodeRunner(executable="claude", workspace_root=tmp_path)
+    runner.run(
+        AgentRunRequest(
+            run_id="run-bash",
+            agent="claude",
+            role="lead_engineer",
+            objective="Implement",
+            context_package={"project_id": "project-bash"},
+            allowed_actions=("read", "write", "edit", "glob", "grep", "bash"),
+        )
+    )
+
+    cmd = seen["cmd"]
+    allowed_index = cmd.index("--allowedTools")
+    disallowed_index = cmd.index("--disallowedTools")
+    tools = cmd[allowed_index + 1:disallowed_index]
+    assert "Bash" in tools
