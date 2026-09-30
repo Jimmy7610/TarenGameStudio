@@ -199,8 +199,7 @@ def test_claude_code_runner_allows_bash_only_when_requested(monkeypatch, tmp_pat
 
     cmd = seen["cmd"]
     allowed_index = cmd.index("--allowedTools")
-    disallowed_index = cmd.index("--disallowedTools")
-    tools = cmd[allowed_index + 1:disallowed_index]
+    tools = cmd[allowed_index + 1:]
     assert "Bash" in tools
     assert "--disallowedTools" not in cmd
 
