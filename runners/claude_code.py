@@ -38,6 +38,12 @@ class ClaudeCodeRunner:
     @staticmethod
     def _prompt(request: AgentRunRequest) -> str:
         context = json.dumps(request.context_package, ensure_ascii=False, indent=2, default=str)
+        writable = any(action in request.allowed_actions for action in ("write", "edit"))
+        mutation_rule = (
+            "- You may create and edit source files required to satisfy the objective."
+            if writable
+            else "- This is an analysis/review phase. Do not create, edit, rename, or delete any files."
+        )
         return f"""You are Claude Code acting as Lead Engineer inside Taren Game Studio.
 
 OBJECTIVE
@@ -54,7 +60,7 @@ WORKSPACE RULES
 - Do not access, modify, or inspect files outside the current working directory.
 - Do not use network access.
 - Do not publish, deploy, spend money, create accounts, or perform external actions.
-- You may create and edit source files required to satisfy the objective.
+{mutation_rule}
 - Keep the implementation deliberately small, reviewable, and reproducible.
 - Do not claim that a build or test passed unless you actually ran it. Bash is not enabled in this verification phase.
 - Finish with a concise summary of exactly what you changed and any remaining risks.
@@ -65,6 +71,17 @@ WORKSPACE RULES
             raise RuntimeError(f"Claude Code executable not found: {self.executable}")
 
         workspace = self._workspace(request)
+        tool_map = {
+            "read": "Read",
+            "write": "Write",
+            "edit": "Edit",
+            "glob": "Glob",
+            "grep": "Grep",
+        }
+        allowed_tools = [tool_map[action] for action in request.allowed_actions if action in tool_map]
+        if not allowed_tools:
+            allowed_tools = ["Read", "Glob", "Grep"]
+
         cmd = [
             self.executable,
             "-p",
@@ -74,11 +91,7 @@ WORKSPACE RULES
             "--max-turns",
             str(self.max_turns),
             "--allowedTools",
-            "Read",
-            "Write",
-            "Edit",
-            "Glob",
-            "Grep",
+            *allowed_tools,
             "--disallowedTools",
             "Bash",
         ]

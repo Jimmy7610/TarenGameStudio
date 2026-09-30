@@ -134,6 +134,7 @@ class StudioEngine:
                         "meeting_type": "kickoff",
                         "devil_advocate": meeting.devil_advocate_agent_id == agent.id,
                     },
+                    allowed_actions=("read", "glob", "grep"),
                 )
             )
             self.meetings.add_message(
@@ -292,6 +293,7 @@ class StudioEngine:
                     role=owner.role,
                     objective=task.description,
                     context_package={"project_id": str(project_id), "acceptance_criteria": task.acceptance_criteria, "task_id": str(task.id)},
+                    allowed_actions=("read", "write", "edit", "glob", "grep"),
                 )
             )
             finished = self.bus.emit(
@@ -348,6 +350,7 @@ class StudioEngine:
                     role=reviewer.role,
                     objective=f"Independently review task: {task.title}",
                     context_package={"project_id": str(project_id), "creator_summary": result.summary, "acceptance_criteria": task.acceptance_criteria, "task_id": str(task.id)},
+                    allowed_actions=("read", "glob", "grep"),
                 )
             )
             review_finished = self.bus.emit(

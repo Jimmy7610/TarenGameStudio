@@ -40,6 +40,7 @@ def test_claude_code_runner_invokes_noninteractive_json_mode(monkeypatch, tmp_pa
             role="lead_engineer",
             objective="Implement first playable",
             context_package={"project_id": "project-123", "task_id": "task-1"},
+            allowed_actions=("read", "write", "edit", "glob", "grep"),
         )
     )
 
@@ -74,3 +75,49 @@ def test_claude_code_runner_fails_cleanly_when_cli_missing(monkeypatch, tmp_path
         assert "executable not found" in str(exc)
     else:
         raise AssertionError("expected RuntimeError")
+
+
+def test_claude_code_runner_read_only_phase_excludes_write_tools(monkeypatch, tmp_path):
+    monkeypatch.setattr("runners.claude_code.shutil.which", lambda _: "/usr/bin/claude")
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "Analysis only.",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("runners.claude_code.subprocess.run", fake_run)
+
+    runner = ClaudeCodeRunner(executable="claude", workspace_root=tmp_path)
+    result = runner.run(
+        AgentRunRequest(
+            run_id="run-ro",
+            agent="claude",
+            role="lead_engineer",
+            objective="Analyze only",
+            context_package={"project_id": "project-ro"},
+            allowed_actions=("read", "glob", "grep"),
+        )
+    )
+
+    assert result.summary == "Analysis only."
+    cmd = seen["cmd"]
+    allowed_index = cmd.index("--allowedTools")
+    disallowed_index = cmd.index("--disallowedTools")
+    tools = cmd[allowed_index + 1:disallowed_index]
+    assert "Read" in tools
+    assert "Glob" in tools
+    assert "Grep" in tools
+    assert "Write" not in tools
+    assert "Edit" not in tools
