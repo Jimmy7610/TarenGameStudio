@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
+
+from .base import AgentRunRequest, AgentRunResult
+
+
+class ClaudeCodeRunner:
+    agent_id = "claude"
+    role = "lead_engineer"
+
+    def __init__(
+        self,
+        *,
+        executable: str | None = None,
+        workspace_root: str | Path | None = None,
+        max_turns: int | None = None,
+        timeout_seconds: int | None = None,
+    ) -> None:
+        self.executable = executable or os.getenv("TGS_CLAUDE_BIN", "claude")
+        self.workspace_root = Path(
+            workspace_root or os.getenv("TGS_WORKSPACE_ROOT", "/srv/taren/game-studio/workspaces")
+        )
+        self.max_turns = max_turns or int(os.getenv("TGS_CLAUDE_MAX_TURNS", "8"))
+        self.timeout_seconds = timeout_seconds or int(os.getenv("TGS_CLAUDE_TIMEOUT_SECONDS", "900"))
+
+    def _workspace(self, request: AgentRunRequest) -> Path:
+        project_id = str(request.context_package.get("project_id") or "unscoped")
+        path = self.workspace_root / project_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @staticmethod
+    def _prompt(request: AgentRunRequest) -> str:
+        context = json.dumps(request.context_package, ensure_ascii=False, indent=2, default=str)
+        return f"""You are Claude Code acting as Lead Engineer inside Taren Game Studio.
+
+OBJECTIVE
+{request.objective}
+
+RUN ID
+{request.run_id}
+
+CONTEXT
+{context}
+
+WORKSPACE RULES
+- Work only inside the current working directory.
+- Do not access, modify, or inspect files outside the current working directory.
+- Do not use network access.
+- Do not publish, deploy, spend money, create accounts, or perform external actions.
+- You may create and edit source files required to satisfy the objective.
+- Keep the implementation deliberately small, reviewable, and reproducible.
+- Do not claim that a build or test passed unless you actually ran it. Bash is not enabled in this verification phase.
+- Finish with a concise summary of exactly what you changed and any remaining risks.
+"""
+
+    def run(self, request: AgentRunRequest) -> AgentRunResult:
+        if shutil.which(self.executable) is None:
+            raise RuntimeError(f"Claude Code executable not found: {self.executable}")
+
+        workspace = self._workspace(request)
+        cmd = [
+            self.executable,
+            "-p",
+            self._prompt(request),
+            "--output-format",
+            "json",
+            "--max-turns",
+            str(self.max_turns),
+            "--allowedTools",
+            "Read",
+            "Write",
+            "Edit",
+            "Glob",
+            "Grep",
+            "--disallowedTools",
+            "Bash",
+        ]
+
+        completed = subprocess.run(
+            cmd,
+            cwd=workspace,
+            text=True,
+            capture_output=True,
+            timeout=self.timeout_seconds,
+            check=False,
+            env=os.environ.copy(),
+        )
+
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            raise RuntimeError(
+                f"Claude Code failed with exit code {completed.returncode}: {detail[-2000:]}"
+            )
+
+        try:
+            payload: dict[str, Any] = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Claude Code returned invalid JSON") from exc
+
+        if payload.get("is_error") or payload.get("subtype") not in (None, "success"):
+            raise RuntimeError(f"Claude Code reported an error: {payload}")
+
+        summary = str(payload.get("result") or "").strip()
+        if not summary:
+            raise RuntimeError("Claude Code returned no result text")
+
+        artifacts = tuple(
+            {
+                "type": "workspace",
+                "ref": str(path.relative_to(workspace)),
+            }
+            for path in sorted(workspace.rglob("*"))
+            if path.is_file()
+        )
+
+        return AgentRunResult(
+            status="completed",
+            summary=summary,
+            artifacts=artifacts,
+        )
