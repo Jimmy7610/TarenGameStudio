@@ -202,3 +202,42 @@ def test_claude_code_runner_allows_bash_only_when_requested(monkeypatch, tmp_pat
     disallowed_index = cmd.index("--disallowedTools")
     tools = cmd[allowed_index + 1:disallowed_index]
     assert "Bash" in tools
+    assert "--disallowedTools" not in cmd
+
+
+def test_claude_code_runner_disallows_bash_in_read_only_phase(monkeypatch, tmp_path):
+    monkeypatch.setattr("runners.claude_code.shutil.which", lambda _: "/usr/bin/claude")
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "Read-only analysis.",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("runners.claude_code.subprocess.run", fake_run)
+    runner = ClaudeCodeRunner(executable="claude", workspace_root=tmp_path)
+    runner.run(
+        AgentRunRequest(
+            run_id="run-readonly",
+            agent="claude",
+            role="lead_engineer",
+            objective="Review only",
+            context_package={"project_id": "project-readonly"},
+            allowed_actions=("read", "glob", "grep"),
+        )
+    )
+
+    cmd = seen["cmd"]
+    assert "--disallowedTools" in cmd
+    assert cmd[cmd.index("--disallowedTools") + 1] == "Bash"
