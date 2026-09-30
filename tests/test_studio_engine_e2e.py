@@ -3,6 +3,7 @@ from sqlalchemy import func, select
 from database.enums import AgentState, ProjectStatus, TaskStatus
 from database.models import Agent, AgentRun, Decision, Event, Meeting, Project, Review, Task
 from orchestrator.studio_engine import StudioEngine
+from runners import AgentRunResult, ClaudeCodeRunner, FakeAntigravity, FakeChatGPT, FakeCodex
 
 
 def test_fake_studio_runs_kickoff_and_complete_pipeline(session):
@@ -70,6 +71,77 @@ def test_api_module_exposes_hq_and_realtime_routes():
     assert "/api/projects/{project_id}/reconcile-status" in paths
     assert "/api/projects/{project_id}/prompt" in paths
     assert "/api/projects/{project_id}/run-cycle" in paths
+    assert "/api/projects/{project_id}/tasks/{task_id}/human-verification" in paths
     assert "/api/projects/{project_id}/run-until-idle" in paths
     assert "/api/studio/state" in paths
     assert "/ws/events" in paths
+
+
+
+class _HumanGateClaude(ClaudeCodeRunner):
+    def __init__(self):
+        pass
+
+    def run(self, request):
+        if request.context_package.get("meeting_type") == "kickoff":
+            return AgentRunResult(status="completed", summary="Windows Pong plan; no files changed.")
+        return AgentRunResult(
+            status="completed",
+            summary="Build and tests passed; awaiting a real human playtest.",
+            verification={
+                "build_ran": True,
+                "build_passed": True,
+                "tests_ran": True,
+                "tests_passed": True,
+                "playable_verified": False,
+            },
+        )
+
+
+def test_human_playtest_acceptance_unblocks_pipeline(session):
+    engine = StudioEngine(
+        session,
+        runners={
+            "chatgpt": FakeChatGPT(),
+            "claude": _HumanGateClaude(),
+            "codex": FakeCodex(),
+            "antigravity": FakeAntigravity(),
+        },
+    )
+    project = engine.create_project("Human gate")
+    session.flush()
+    kickoff = engine.kickoff(project, "Create a tiny Windows Pong prototype.")
+    implementation_id = kickoff["tasks"][1]
+
+    first = engine.run_until_idle(project.id)
+    implementation = session.get(Task, implementation_id)
+    assert implementation.status == TaskStatus.BLOCKED
+    assert first["state"]["project"]["status"] == "ACTIVE"
+
+    accepted = engine.submit_human_verification(
+        project.id,
+        implementation.id,
+        approved=True,
+        notes="Played on Windows: paddles, ball, scoring and Esc all work.",
+    )
+    assert accepted["approved"] is True
+    assert accepted["promoted_tasks"]
+    assert implementation.status == TaskStatus.DONE
+
+    event = session.scalar(
+        select(Event)
+        .where(
+            Event.project_id == project.id,
+            Event.event_type == "human_verification.accepted",
+        )
+        .order_by(Event.timestamp.desc(), Event.id.desc())
+        .limit(1)
+    )
+    assert event is not None
+    assert event.actor == "jimmy"
+    assert event.payload_json["human_verification"]["playable_verified"] is True
+
+    final = engine.run_until_idle(project.id)
+    tasks = list(session.scalars(select(Task).where(Task.project_id == project.id)))
+    assert all(task.status == TaskStatus.DONE for task in tasks)
+    assert final["state"]["project"]["status"] == "READY"
