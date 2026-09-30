@@ -344,6 +344,89 @@ class StudioEngine:
                 return "Acceptance criterion requiring a playable core loop was not verified by the real runner."
         return None
 
+    def submit_human_verification(
+        self,
+        project_id: uuid.UUID,
+        task_id: uuid.UUID,
+        *,
+        approved: bool,
+        notes: str = "",
+        actor: str = "jimmy",
+    ) -> dict:
+        project = self.session.get(Project, project_id)
+        if project is None:
+            raise KeyError(str(project_id))
+        task = self.session.get(Task, task_id)
+        if task is None or task.project_id != project_id:
+            raise KeyError(str(task_id))
+        if task.status != TaskStatus.BLOCKED:
+            raise ValueError("human verification is only valid for a BLOCKED task")
+
+        blocked_events = list(self.session.scalars(
+            select(Event)
+            .where(Event.project_id == project_id, Event.event_type == "task.blocked")
+            .order_by(Event.timestamp.desc(), Event.id.desc())
+        ))
+        blocked_event = next(
+            (event for event in blocked_events if (event.payload_json or {}).get("task_id") == str(task_id)),
+            None,
+        )
+        if blocked_event is None:
+            raise ValueError("blocked task has no task.blocked event")
+
+        reason = str((blocked_event.payload_json or {}).get("reason") or "")
+        if approved and "playable" not in reason.lower():
+            raise ValueError("task is not blocked on playable verification")
+
+        latest_run = self.session.scalar(
+            select(AgentRun)
+            .where(AgentRun.project_id == project_id, AgentRun.task_id == task_id)
+            .order_by(AgentRun.finished_at.desc(), AgentRun.created_at.desc(), AgentRun.id.desc())
+            .limit(1)
+        )
+        verification = ((latest_run.output_json or {}).get("verification") or {}) if latest_run else {}
+        criteria = " ".join(str(item).lower() for item in task.acceptance_criteria)
+        if approved and "build runs" in criteria:
+            if not (verification.get("build_ran") is True and verification.get("build_passed") is True):
+                raise ValueError("human playable approval cannot bypass an unverified build")
+
+        flow = self._latest_flow(project_id)
+        event_type = "human_verification.accepted" if approved else "human_verification.rejected"
+        verification_event = self.bus.emit(
+            project_id=project_id,
+            event_type=event_type,
+            actor=actor,
+            correlation_id=flow,
+            causation_id=blocked_event.id,
+            payload={
+                "task_id": str(task.id),
+                "approved": approved,
+                "verification_type": "playable",
+                "notes": notes,
+                "runner_verification": verification,
+                "human_verification": {"playable_verified": approved},
+                "blocked_event_id": str(blocked_event.id),
+                "agent_run_id": str(latest_run.id) if latest_run else None,
+            },
+        )
+
+        promoted = []
+        assignments = []
+        if approved:
+            promoted = self.scheduler.promote_ready(project_id=project_id, correlation_id=flow)
+            assignments = self.scheduler.assign_ready(project_id=project_id, correlation_id=flow)
+
+        self.session.commit()
+        return {
+            "project_id": str(project_id),
+            "task_id": str(task_id),
+            "approved": approved,
+            "event_id": str(verification_event.id),
+            "promoted_tasks": [str(t.id) for t in promoted],
+            "assignments": [{"task_id": str(t.id), "agent_id": a.id} for t, a in assignments],
+            "state": self.state_snapshot(project_id),
+        }
+
     def _available_reviewer(self, owner_agent_id: str) -> Agent:
         preference = ["codex", "claude", "chatgpt", "antigravity"]
         for agent_id in preference:
