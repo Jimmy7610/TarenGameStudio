@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 
 from sqlalchemy import select
@@ -14,7 +15,7 @@ from orchestrator.project_service import ProjectService
 from orchestrator.review_service import ReviewService
 from orchestrator.scheduler import Scheduler
 from orchestrator.task_service import TaskService
-from runners import AgentRunRequest, FakeAntigravity, FakeChatGPT, FakeClaude, FakeCodex
+from runners import AgentRunRequest, ClaudeCodeRunner, FakeAntigravity, FakeChatGPT, FakeClaude, FakeCodex
 
 
 DEFAULT_ROSTER = {
@@ -42,9 +43,14 @@ class StudioEngine:
         self.projects = ProjectService(session)
         self.reviews = ReviewService(session)
         self.scheduler = Scheduler(session)
-        self.runners = runners or {
+        self.runners = runners or self._default_runners()
+
+    @staticmethod
+    def _default_runners() -> dict:
+        real = {item.strip().lower() for item in os.getenv("TGS_REAL_RUNNERS", "").split(",") if item.strip()}
+        return {
             "chatgpt": FakeChatGPT(),
-            "claude": FakeClaude(),
+            "claude": ClaudeCodeRunner() if "claude" in real else FakeClaude(),
             "codex": FakeCodex(),
             "antigravity": FakeAntigravity(),
         }
@@ -123,6 +129,7 @@ class StudioEngine:
                     role=agent.role,
                     objective="Critically analyze the owner prompt from your specialist role. Identify the strongest next step and at least one risk.",
                     context_package={
+                        "project_id": str(project.id),
                         "owner_prompt": owner_prompt,
                         "meeting_type": "kickoff",
                         "devil_advocate": meeting.devil_advocate_agent_id == agent.id,
@@ -284,7 +291,7 @@ class StudioEngine:
                     agent=owner.id,
                     role=owner.role,
                     objective=task.description,
-                    context_package={"acceptance_criteria": task.acceptance_criteria, "task_id": str(task.id)},
+                    context_package={"project_id": str(project_id), "acceptance_criteria": task.acceptance_criteria, "task_id": str(task.id)},
                 )
             )
             finished = self.bus.emit(
@@ -340,7 +347,7 @@ class StudioEngine:
                     agent=reviewer.id,
                     role=reviewer.role,
                     objective=f"Independently review task: {task.title}",
-                    context_package={"creator_summary": result.summary, "acceptance_criteria": task.acceptance_criteria},
+                    context_package={"project_id": str(project_id), "creator_summary": result.summary, "acceptance_criteria": task.acceptance_criteria, "task_id": str(task.id)},
                 )
             )
             review_finished = self.bus.emit(
