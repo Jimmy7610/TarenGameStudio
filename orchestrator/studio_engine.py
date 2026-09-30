@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.enums import AgentState, Priority, TaskStatus
-from database.models import Agent, AgentRun, Artifact, Decision, Event, Meeting, Project, Review, Task, TaskDependency
+from database.models import Agent, AgentRun, Artifact, Decision, Event, Meeting, MeetingMessage, Project, Review, Task, TaskDependency
 from orchestrator.agent_service import AgentService
 from orchestrator.command_bus import CommandBus
 from orchestrator.meeting_service import MeetingService
@@ -279,12 +279,45 @@ class StudioEngine:
                 "output": (latest_run.output_json or {}) if latest_run else {},
             })
 
+        meeting = self.session.scalar(
+            select(Meeting)
+            .where(Meeting.project_id == task.project_id, Meeting.meeting_type == "kickoff")
+            .order_by(Meeting.created_at.desc(), Meeting.id.desc())
+            .limit(1)
+        )
+        meeting_context: list[dict] = []
+        if meeting is not None:
+            messages = list(self.session.scalars(
+                select(MeetingMessage)
+                .where(MeetingMessage.meeting_id == meeting.id)
+                .order_by(MeetingMessage.sequence)
+            ))
+            meeting_context = [
+                {"actor": message.actor, "content": message.content}
+                for message in messages
+            ]
+
+        decisions = list(self.session.scalars(
+            select(Decision)
+            .where(Decision.project_id == task.project_id)
+            .order_by(Decision.created_at, Decision.id)
+        ))
+
         return {
             "project_id": str(task.project_id),
             "task_id": str(task.id),
             "owner_prompt": owner_prompt,
             "acceptance_criteria": task.acceptance_criteria,
             "dependencies": dependency_context,
+            "kickoff_messages": meeting_context,
+            "decisions": [
+                {
+                    "key": decision.decision_key,
+                    "decision": decision.decision,
+                    "reason": decision.reason,
+                }
+                for decision in decisions
+            ],
         }
 
     @staticmethod

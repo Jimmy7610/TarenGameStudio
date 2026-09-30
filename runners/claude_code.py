@@ -105,9 +105,9 @@ WORKSPACE RULES
             str(self.max_turns),
             "--allowedTools",
             *allowed_tools,
-            "--disallowedTools",
-            "Bash",
         ]
+        if "bash" not in request.allowed_actions:
+            cmd.extend(["--disallowedTools", "Bash"])
 
         completed = subprocess.run(
             cmd,
