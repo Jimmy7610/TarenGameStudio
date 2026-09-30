@@ -24,6 +24,7 @@ class AgentRunResult:
     artifacts: tuple[dict[str, Any], ...] = ()
     requested_actions: tuple[dict[str, Any], ...] = ()
     needs_meeting: bool = False
+    verification: dict[str, Any] = field(default_factory=dict)
 
 
 class AgentRunner(Protocol):

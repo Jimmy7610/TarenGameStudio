@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -39,10 +40,16 @@ class ClaudeCodeRunner:
     def _prompt(request: AgentRunRequest) -> str:
         context = json.dumps(request.context_package, ensure_ascii=False, indent=2, default=str)
         writable = any(action in request.allowed_actions for action in ("write", "edit"))
+        bash_allowed = "bash" in request.allowed_actions
         mutation_rule = (
             "- You may create and edit source files required to satisfy the objective."
             if writable
             else "- This is an analysis/review phase. Do not create, edit, rename, or delete any files."
+        )
+        bash_rule = (
+            "- Bash is allowed only for commands needed to build/test files in this workspace. Do not install packages, use sudo, access the network, or touch paths outside the workspace."
+            if bash_allowed
+            else "- Bash is not allowed in this phase."
         )
         return f"""You are Claude Code acting as Lead Engineer inside Taren Game Studio.
 
@@ -61,9 +68,14 @@ WORKSPACE RULES
 - Do not use network access.
 - Do not publish, deploy, spend money, create accounts, or perform external actions.
 {mutation_rule}
+{bash_rule}
 - Keep the implementation deliberately small, reviewable, and reproducible.
-- Do not claim that a build or test passed unless you actually ran it. Bash is not enabled in this verification phase.
+- Follow the owner instruction and supplied design/dependency context exactly. Do not substitute a different game or platform unless the context explicitly approves it.
+- Do not claim that a build, test, or playable check passed unless you actually performed it.
 - Finish with a concise summary of exactly what you changed and any remaining risks.
+- On the final line, output exactly one machine-readable marker:
+  TGS_VERIFICATION: {{"build_ran": true|false, "build_passed": true|false, "tests_ran": true|false, "tests_passed": true|false, "playable_verified": true|false}}
+
 """
 
     def run(self, request: AgentRunRequest) -> AgentRunResult:
@@ -77,6 +89,7 @@ WORKSPACE RULES
             "edit": "Edit",
             "glob": "Glob",
             "grep": "Grep",
+            "bash": "Bash",
         }
         allowed_tools = [tool_map[action] for action in request.allowed_actions if action in tool_map]
         if not allowed_tools:
@@ -124,6 +137,16 @@ WORKSPACE RULES
         if not summary:
             raise RuntimeError("Claude Code returned no result text")
 
+        verification: dict[str, Any] = {}
+        match = re.search(r"TGS_VERIFICATION:\s*(\{.*\})\s*$", summary, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(1))
+                if isinstance(parsed, dict):
+                    verification = parsed
+            except json.JSONDecodeError:
+                verification = {}
+
         artifacts = tuple(
             {
                 "type": "workspace",
@@ -137,4 +160,5 @@ WORKSPACE RULES
             status="completed",
             summary=summary,
             artifacts=artifacts,
+            verification=verification,
         )

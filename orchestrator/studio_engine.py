@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.enums import AgentState, Priority, TaskStatus
-from database.models import Agent, Artifact, Decision, Event, Meeting, Project, Review, Task
+from database.models import Agent, AgentRun, Artifact, Decision, Event, Meeting, Project, Review, Task, TaskDependency
 from orchestrator.agent_service import AgentService
 from orchestrator.command_bus import CommandBus
 from orchestrator.meeting_service import MeetingService
@@ -248,6 +248,69 @@ class StudioEngine:
             raise ValueError("project has no active flow")
         return correlation_id
 
+    def _task_context(self, task: Task) -> dict:
+        instruction = self.session.scalar(
+            select(Event)
+            .where(Event.project_id == task.project_id, Event.event_type == "instruction.received")
+            .order_by(Event.timestamp.desc(), Event.id.desc())
+            .limit(1)
+        )
+        owner_prompt = (instruction.payload_json or {}).get("prompt") if instruction else None
+
+        dependency_context: list[dict] = []
+        dependency_ids = list(self.session.scalars(
+            select(TaskDependency.depends_on_task_id)
+            .where(TaskDependency.task_id == task.id)
+            .order_by(TaskDependency.created_at, TaskDependency.id)
+        ))
+        for dependency_id in dependency_ids:
+            dependency = self.session.get(Task, dependency_id)
+            latest_run = self.session.scalar(
+                select(AgentRun)
+                .where(AgentRun.project_id == task.project_id, AgentRun.task_id == dependency_id)
+                .order_by(AgentRun.finished_at.desc(), AgentRun.created_at.desc(), AgentRun.id.desc())
+                .limit(1)
+            )
+            dependency_context.append({
+                "task_id": str(dependency_id),
+                "title": dependency.title if dependency else None,
+                "description": dependency.description if dependency else None,
+                "acceptance_criteria": dependency.acceptance_criteria if dependency else [],
+                "output": (latest_run.output_json or {}) if latest_run else {},
+            })
+
+        return {
+            "project_id": str(task.project_id),
+            "task_id": str(task.id),
+            "owner_prompt": owner_prompt,
+            "acceptance_criteria": task.acceptance_criteria,
+            "dependencies": dependency_context,
+        }
+
+    @staticmethod
+    def _task_actions(task: Task) -> tuple[str, ...]:
+        title = task.title.lower()
+        implementation = any(word in title for word in ("implement", "build", "fix", "rework"))
+        if implementation:
+            return ("read", "write", "edit", "glob", "grep", "bash")
+        return ("read", "glob", "grep")
+
+    @staticmethod
+    def _verification_failure(task: Task, runner, result) -> str | None:
+        if not isinstance(runner, ClaudeCodeRunner):
+            return None
+
+        criteria = " ".join(str(item).lower() for item in task.acceptance_criteria)
+        verification = result.verification or {}
+
+        if "build runs" in criteria:
+            if not (verification.get("build_ran") is True and verification.get("build_passed") is True):
+                return "Acceptance criterion 'Build runs' was not verified by the real runner."
+        if "playable" in criteria:
+            if verification.get("playable_verified") is not True:
+                return "Acceptance criterion requiring a playable core loop was not verified by the real runner."
+        return None
+
     def _available_reviewer(self, owner_agent_id: str) -> Agent:
         preference = ["codex", "claude", "chatgpt", "antigravity"]
         for agent_id in preference:
@@ -286,14 +349,16 @@ class StudioEngine:
                     "input": {"acceptance_criteria": task.acceptance_criteria},
                 },
             )
+            task_context = self._task_context(task)
+            actions = self._task_actions(task)
             result = runner.run(
                 AgentRunRequest(
                     run_id=str(run_id),
                     agent=owner.id,
                     role=owner.role,
                     objective=task.description,
-                    context_package={"project_id": str(project_id), "acceptance_criteria": task.acceptance_criteria, "task_id": str(task.id)},
-                    allowed_actions=("read", "write", "edit", "glob", "grep"),
+                    context_package=task_context,
+                    allowed_actions=actions,
                 )
             )
             finished = self.bus.emit(
@@ -302,8 +367,27 @@ class StudioEngine:
                 actor=owner.id,
                 correlation_id=flow,
                 causation_id=started.id,
-                payload={"run_id": str(run_id), "output": {"summary": result.summary}},
+                payload={"run_id": str(run_id), "output": {"summary": result.summary, "verification": result.verification}},
             )
+
+            verification_failure = self._verification_failure(task, runner, result)
+            if verification_failure:
+                self.tasks.block(
+                    task,
+                    reason=verification_failure,
+                    actor="orchestrator",
+                    correlation_id=flow,
+                    causation_id=finished.id,
+                )
+                self.agents.set_state(
+                    project_id=project_id,
+                    agent=owner,
+                    state=AgentState.IDLE,
+                    correlation_id=flow,
+                    causation_id=finished.id,
+                )
+                continue
+
             self.agents.set_state(
                 project_id=project_id,
                 agent=owner,
@@ -396,10 +480,17 @@ class StudioEngine:
                 ).limit(1)
             )
             if remaining is None:
-                project = self.session.get(Project, project_id)
-                if project is not None and project.status.value != "READY":
-                    self.projects.ready(project=project, correlation_id=self._latest_flow(project_id))
-                    self.session.commit()
+                blocked_or_failed = self.session.scalar(
+                    select(Task.id).where(
+                        Task.project_id == project_id,
+                        Task.status.in_([TaskStatus.BLOCKED, TaskStatus.FAILED]),
+                    ).limit(1)
+                )
+                if blocked_or_failed is None:
+                    project = self.session.get(Project, project_id)
+                    if project is not None and project.status.value != "READY":
+                        self.projects.ready(project=project, correlation_id=self._latest_flow(project_id))
+                        self.session.commit()
                 break
             if not result["completed_tasks"] and not result["assignments"] and not result["promoted_tasks"]:
                 break
