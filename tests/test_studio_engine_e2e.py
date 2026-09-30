@@ -111,7 +111,8 @@ def test_human_playtest_acceptance_unblocks_pipeline(session):
     project = engine.create_project("Human gate")
     session.flush()
     kickoff = engine.kickoff(project, "Create a tiny Windows Pong prototype.")
-    implementation_id = kickoff["tasks"][1]
+    import uuid
+    implementation_id = uuid.UUID(kickoff["tasks"][1])
 
     first = engine.run_until_idle(project.id)
     implementation = session.get(Task, implementation_id)
