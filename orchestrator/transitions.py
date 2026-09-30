@@ -12,7 +12,7 @@ TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.READY: {TaskStatus.WORKING, TaskStatus.BLOCKED, TaskStatus.CANCELLED},
     TaskStatus.WORKING: {TaskStatus.REVIEW, TaskStatus.BLOCKED, TaskStatus.FAILED, TaskStatus.CANCELLED},
     TaskStatus.REVIEW: {TaskStatus.WORKING, TaskStatus.DONE, TaskStatus.BLOCKED, TaskStatus.FAILED, TaskStatus.CANCELLED},
-    TaskStatus.BLOCKED: {TaskStatus.READY, TaskStatus.WORKING, TaskStatus.CANCELLED, TaskStatus.FAILED},
+    TaskStatus.BLOCKED: {TaskStatus.READY, TaskStatus.WORKING, TaskStatus.DONE, TaskStatus.CANCELLED, TaskStatus.FAILED},
     TaskStatus.FAILED: set(),
     TaskStatus.DONE: set(),
     TaskStatus.CANCELLED: set(),
