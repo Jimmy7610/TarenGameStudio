@@ -15,7 +15,7 @@ from orchestrator.project_service import ProjectService
 from orchestrator.review_service import ReviewService
 from orchestrator.scheduler import Scheduler
 from orchestrator.task_service import TaskService
-from runners import AgentRunRequest, ClaudeCodeRunner, FakeAntigravity, FakeChatGPT, FakeClaude, FakeCodex
+from runners import AgentRunRequest, ClaudeCodeRunner, CodexRunner, FakeAntigravity, FakeChatGPT, FakeClaude, FakeCodex
 
 
 DEFAULT_ROSTER = {
@@ -51,7 +51,7 @@ class StudioEngine:
         return {
             "chatgpt": FakeChatGPT(),
             "claude": ClaudeCodeRunner() if "claude" in real else FakeClaude(),
-            "codex": FakeCodex(),
+            "codex": CodexRunner() if "codex" in real else FakeCodex(),
             "antigravity": FakeAntigravity(),
         }
 
